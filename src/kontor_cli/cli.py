@@ -71,12 +71,19 @@ def check_config(config_path: Path | None) -> None:
 @click.option("--email-id", required=True, help="Email ID from himalaya envelope list")
 @click.option("--folder", default="INBOX", help="Source folder (default: INBOX)")
 @click.option(
+    "--recommend",
+    is_flag=True,
+    help="Output full classification recommendation as JSON for LLM review (no API key required)",
+)
+@click.option(
     "--config",
     "config_path",
     type=click.Path(exists=False, path_type=Path),
     default=None,
 )
-def classify(email_id: str, folder: str, config_path: Path | None) -> None:
+def classify(
+    email_id: str, folder: str, recommend: bool, config_path: Path | None
+) -> None:
     """Print the target folder for a given email ID (dry run — no changes)."""
     try:
         cfg = Config.load(config_path)
@@ -101,6 +108,7 @@ def classify(email_id: str, folder: str, config_path: Path | None) -> None:
 
     engine = RulesEngine(cfg)
     result = engine.classify(email)
+    nl_context = engine.get_nl_context()
 
     from kontor_cli.folders import get_target_for_email
 
@@ -109,7 +117,36 @@ def classify(email_id: str, folder: str, config_path: Path | None) -> None:
         result,
         archive_age_months=cfg.pipeline_archive_months,
     )
-    click.echo(target)
+
+    if recommend:
+        import json
+
+        payload = {
+            "email": {
+                "id": email.id,
+                "from": email.from_addr,
+                "subject": email.subject,
+                "date": email.date.isoformat(),
+                "flags": email.flags,
+                "folder": email.folder,
+            },
+            "rules_based_target": target,
+            "rules_match": result is not None,
+            "nl_context": nl_context,
+            "archive_age_months": cfg.pipeline_archive_months,
+            "taxonomy": {
+                "0_Action": "Requires immediate action from you",
+                "1_Management/MGT_<Topic>": "Management topics: reporting, HR, legal, compliance",
+                "2_Projects/PRJ_<Domain>_<Initiative>_<Scope>": "Project work: specs, status updates, reviews",
+                "3_External/EXT_<Company>_<Topic>": "External parties: vendors, partners, clients",
+                "4_Info": "Informational only: newsletters, announcements",
+                "9_System": "System emails: CI/CD, security alerts, infra",
+                "Archive/<same_path>": "Emails >6 months old",
+            },
+        }
+        click.echo(json.dumps(payload, indent=2))
+    else:
+        click.echo(target)
 
 
 @cli.command("process")

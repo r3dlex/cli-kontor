@@ -14,3 +14,6 @@ build/
 htmlcov/
 .mypy_cache/
 .ruff_cache/
+.omx/
+.antigravitycli/
+config.yaml

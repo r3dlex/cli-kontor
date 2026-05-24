@@ -26,7 +26,7 @@ class DavMailNotReachableError(ConfigError):
 class Config:
     """Validated configuration object."""
 
-    def __init__(self, data: dict[str, Any]) -> None:
+    def __init__(self, data: dict[str, Any], config_dir: Path | None = None) -> None:
         self.himalaya_version: str = data["himalaya"]["version"]
         self.davmail_host: str = data["davmail"]["host"]
         self.davmail_imap_port: int = data["davmail"]["imap_port"]
@@ -39,14 +39,16 @@ class Config:
         self.account_smtp_host: str = data["account"]["smtp_host"]
         self.account_smtp_port: int = data["account"]["smtp_port"]
         self.llm_base_url: str = data["llm"]["base_url"]
-        self.llm_api_key: str = data["llm"]["api_key"]
+        self.llm_api_key: str | None = data["llm"].get("api_key") or None
         self.llm_model: str = data["llm"]["model"]
         self.llm_temperature: float = data["llm"]["temperature"]
         self.llm_timeout: int = data["llm"]["timeout"]
-        self.rules_yaml_dir: Path = Path(data["rules"]["yaml_dir"])
-        self.rules_python_file: Path = Path(data["rules"]["python_rules_file"])
-        self.rules_nl_dir: Path = Path(data["rules"]["nl_rules_dir"])
-        self.rules_evolved_dir: Path = Path(data["rules"]["evolved_dir"])
+        # Resolve relative paths against the config file directory
+        config_dir = config_dir or Path.cwd()
+        self.rules_yaml_dir: Path = config_dir / data["rules"]["yaml_dir"]
+        self.rules_python_file: Path = config_dir / data["rules"]["python_rules_file"]
+        self.rules_nl_dir: Path = config_dir / data["rules"]["nl_rules_dir"]
+        self.rules_evolved_dir: Path = config_dir / data["rules"]["evolved_dir"]
         self.pipeline_archive_months: int = data["pipeline"]["archive_age_months"]
         self.pipeline_confidence_threshold: float = data["pipeline"][
             "confidence_threshold"
@@ -76,7 +78,8 @@ class Config:
             raise ConfigError(f"Invalid YAML in {path}: {exc}") from exc
 
         cls._validate_required(data, path)
-        return cls(data)
+        config_dir = path.parent if path.parent else None
+        return cls(data, config_dir=config_dir)
 
     @classmethod
     def _validate_required(cls, data: dict[str, Any], path: Path) -> None:
@@ -97,9 +100,6 @@ class Config:
             raise ConfigError("davmail.imap_port must be an integer")
         if not isinstance(data["davmail"].get("smtp_port"), int):
             raise ConfigError("davmail.smtp_port must be an integer")
-
-        if not data["llm"].get("api_key"):
-            raise ConfigError("llm.api_key must be set")
 
     def check_prerequisites(self) -> None:
         """Run startup checks: himalaya, himalaya version, DavMail connectivity."""

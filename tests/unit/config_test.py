@@ -107,15 +107,19 @@ class TestConfigLoad:
         with pytest.raises(ConfigError, match="davmail.imap_port must be an integer"):
             Config.load(cfg_file)
 
-    def test_validate_config_missing_api_key(self, tmp_path: Path) -> None:
+    def test_validate_config_missing_api_key_is_allowed(self, tmp_path: Path) -> None:
+        """llm.api_key is optional — classify --recommend works without it."""
         import yaml
 
         cfg_file = tmp_path / "no_api_key.yaml"
         data = _minimal_config()
         data["llm"]["api_key"] = ""
-        yaml.safe_dump(data, open(cfg_file, "w"))
-        with pytest.raises(ConfigError, match="llm.api_key must be set"):
-            Config.load(cfg_file)
+        data["llm"]["api_key"] = None  # type: ignore[literal]
+        with open(cfg_file, "w") as fh:
+            yaml.safe_dump(data, fh)
+        # Should NOT raise — api_key is optional
+        cfg = Config.load(cfg_file)
+        assert cfg.llm_api_key is None
 
 
 class TestCheckPrerequisites:

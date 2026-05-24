@@ -61,7 +61,7 @@ class TestCheckConfig:
                     "confidence_threshold": 0.7,
                     "llm_failure_alert_threshold": 5,
                 },
-                "logging": {"level": "INFO", "format": "json"},
+                "logging": {"level": "ERROR", "format": "text"},
             },
             open(cfg_file, "w"),
         )
@@ -236,3 +236,107 @@ class TestProcess:
                 )
                 assert result.exit_code == 0
                 assert "rebuild" in result.output
+
+
+class TestClassifyRecommend:
+    def test_classify_recommend_requires_no_llm_api_key(self, tmp_path: Path) -> None:
+        """--recommend should work without llm.api_key in config."""
+        import json
+
+        import yaml
+        from click.testing import CliRunner
+
+        from kontor_cli.cli import cli
+
+        cfg_file = tmp_path / "config.yaml"
+        with open(cfg_file, "w") as fh:
+            yaml.safe_dump(
+                {
+                    "himalaya": {"version": ">=1.0.0"},
+                    "davmail": {
+                        "host": "localhost",
+                        "imap_port": 1110,
+                        "smtp_port": 1025,
+                        "http_proxy_port": 3128,
+                    },
+                    "account": {
+                        "email": "t@t.com",
+                        "display_name": "t",
+                        "imap_host": "localhost",
+                        "imap_port": 1110,
+                        "smtp_host": "localhost",
+                        "smtp_port": 1025,
+                    },
+                    # No llm.api_key — this is the key assertion
+                    "llm": {
+                        "base_url": "https://api.openai.com/v1",
+                        "model": "gpt-4o",
+                        "temperature": 0.0,
+                        "timeout": 30,
+                    },
+                    "rules": {
+                        "yaml_dir": "rules",
+                        "python_rules_file": "rules/rules.py",
+                        "nl_rules_dir": "rules",
+                        "evolved_dir": "rules/evolved",
+                    },
+                    "pipeline": {
+                        "archive_age_months": 6,
+                        "confidence_threshold": 0.7,
+                        "llm_failure_alert_threshold": 5,
+                    },
+                    "logging": {"level": "ERROR", "format": "text"},
+                },
+                fh,
+            )
+        rules_dir = tmp_path / "rules"
+        rules_dir.mkdir()
+
+        runner = CliRunner()
+        with mock.patch(
+            "kontor_cli.himalaya._run",
+            return_value=json.dumps(
+                [
+                    {
+                        "id": "42",
+                        "from": {"address": "boss@example.com"},
+                        "subject": "Q1 Budget",
+                        "date": "2024-03-15T10:00:00Z",
+                        "flags": {},
+                    }
+                ]
+            ),
+        ):
+            result = runner.invoke(
+                cli,
+                [
+                    "classify",
+                    "--email-id",
+                    "42",
+                    "--recommend",
+                    "--config",
+                    str(cfg_file),
+                ],
+            )
+
+        assert result.exit_code == 0, result.output
+        # stdout may contain JSON log lines before the --recommend JSON; parse the last complete JSON block
+        import re
+
+        json_blocks = re.findall(r"\{[^{}]*\}", result.output, re.DOTALL)
+        # Try to find the recommend JSON (has "email" and "taxonomy" keys)
+        data = None
+        for block in reversed(json_blocks):
+            try:
+                parsed = json.loads(block)
+                if "email" in parsed and "taxonomy" in parsed:
+                    data = parsed
+                    break
+            except Exception:
+                continue
+        if data is None:
+            data = json.loads(result.output)  # fallback
+        assert data["email"]["id"] == "42"
+        assert data["email"]["from"] == "boss@example.com"
+        assert "rules_based_target" in data
+        assert "taxonomy" in data

@@ -25,10 +25,10 @@ class MockConfig:
 
     pipeline_archive_months = 6
     pipeline_llm_failure_alert = 5
-    rules_yaml_dir = Path("rules")
-    rules_python_file = Path("rules/rules.py")
-    rules_nl_dir = Path("rules")
-    rules_evolved_dir = Path("rules/evolved")
+    rules_yaml_dir = Path.cwd() / "rules"
+    rules_python_file = Path.cwd() / "rules" / "rules.py"
+    rules_nl_dir = Path.cwd() / "rules"
+    rules_evolved_dir = Path.cwd() / "rules" / "evolved"
     llm_base_url = "https://api.openai.com/v1"
     llm_api_key = "sk-test"
     llm_model = "gpt-4o"

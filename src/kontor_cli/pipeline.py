@@ -38,17 +38,22 @@ class Pipeline:
         self.skipped_already_correct = 0
         self.skipped_loop = 0
         self.llm_failures = 0
+        self._created_folders: set[str] = set()  # cache of folders already created
 
     def _ensure_folder(self, folder: str) -> None:
         """Ensure a folder exists. Creates it if valid and missing."""
+        if folder in self._created_folders:
+            return
         if not is_valid_folder(folder):
             logger.warning(f"Skipping invalid folder creation: {folder}")
             return
         try:
             create_folder(folder, cwd=self.cwd)
+            self._created_folders.add(folder)
             logger.info(f"Created folder: {folder}")
         except HimalayaError:
-            pass  # folder already exists
+            self._created_folders.add(folder)
+            pass
 
     def _process_email(self, email: Email, dry_run: bool = False) -> str | None:
         """Process a single email: classify → enforce archive → move."""

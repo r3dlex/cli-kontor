@@ -36,11 +36,11 @@ class Email:
     def from_json(cls, obj: dict[str, Any], folder: str) -> Email:
         """Parse from a himalaya envelope JSON dict."""
         from_field = obj.get("from", {})
-        addr = (
-            from_field.get("address", "")
-            if isinstance(from_field, dict)
-            else str(from_field)
-        )
+        if isinstance(from_field, dict):
+            raw_addr = from_field.get("addr", from_field.get("address", ""))
+            addr = str(raw_addr or "")
+        else:
+            addr = str(from_field)
         date_str = obj.get("date", "")
         try:
             date = datetime.fromisoformat(date_str.replace("Z", "+00:00"))
@@ -78,17 +78,43 @@ def _run(args: list[str], cwd: str | None = None) -> str:
 
 
 def list_emails(folder: str = "INBOX", cwd: str | None = None) -> list[Email]:
-    """List all emails in a folder. Returns list of Email objects."""
-    output = _run(["envelope", "list", "-f", folder, "-o", "json"], cwd=cwd)
-    try:
-        envelopes = json.loads(output)
-    except json.JSONDecodeError as exc:
-        raise HimalayaError(f"himalaya returned invalid JSON: {exc}") from exc
-    if not isinstance(envelopes, list):
-        raise HimalayaError(
-            f"himalaya envelope list returned unexpected type: {type(envelopes)}"
+    """List all emails in a folder using pagination. Returns list of Email objects."""
+    import time
+
+    all_envelopes = []
+    page = 1
+    while True:
+        output = _run(
+            [
+                "envelope",
+                "list",
+                "-f",
+                folder,
+                "-o",
+                "json",
+                "--page-size",
+                "50",
+                "--page",
+                str(page),
+            ],
+            cwd=cwd,
         )
-    return [Email.from_json(e, folder) for e in envelopes]
+        try:
+            envelopes = json.loads(output)
+        except json.JSONDecodeError as exc:
+            raise HimalayaError(f"himalaya returned invalid JSON: {exc}") from exc
+        if not isinstance(envelopes, list):
+            raise HimalayaError(
+                f"himalaya envelope list returned unexpected type: {type(envelopes)}"
+            )
+        if not envelopes:
+            break
+        all_envelopes.extend(envelopes)
+        if len(envelopes) < 50:
+            break
+        page += 1
+        time.sleep(0.3)  # Rate limit for Exchange
+    return [Email.from_json(e, folder) for e in all_envelopes]
 
 
 def move_email(

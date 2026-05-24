@@ -1,6 +1,6 @@
 # kontor-cli
 
-Autonomous email management CLI for `andre.burgstahler@rib-software.com` using **himalaya** + **DavMail** (EWS bridge) + **LLM classifier**.
+Autonomous email management CLI for a work mailbox using **himalaya** + **DavMail** (EWS bridge) + **LLM classifier**.
 
 ## Prerequisites
 
