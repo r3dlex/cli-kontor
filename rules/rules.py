@@ -27,7 +27,6 @@ EXTERNAL_TO_FOLDER: dict[str, str] = {
     "goengineer.com": "3_External/GoEngineer",
     "lapid.org": "3_External/Lapid",
     "beonex.com": "3_External/Beonex",
-
     "t-online.de": "3_External/TOnline",
     "informa.com": "3_External/Informa",
     "wegaconsulting.de": "3_External/WeGa",
@@ -41,7 +40,6 @@ EXTERNAL_TO_FOLDER: dict[str, str] = {
     "contexus.com": "3_External/Contexus",
     "jobrad.de": "3_External/JobRad",
     "peakon.com": "3_External/Peakon",
-
     "promoteinternational.com": "3_External/PromoteIntl",
     "mentimeter.com": "3_External/Mentimeter",
 }
