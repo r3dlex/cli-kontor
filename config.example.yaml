@@ -1,6 +1,31 @@
-# kontor-cli configuration
+# kontor-cli configuration — PER-ACCOUNT TEMPLATE
+# ================================================
+#
+# This file is a TEMPLATE for per-account LLM classification setup.
 # Copy this file to config.yaml and fill in your values.
 # config.yaml is gitignored — NEVER commit real credentials.
+#
+# USAGE IN TIDY PIPELINE:
+#   Each account gets its own config.yaml (e.g., config.work.yaml, config.personal.yaml).
+#   Invoke kontor-cli per-account in the tidy pipeline:
+#     kontor-cli --config config.work.yaml process --phase realtime
+#     kontor-cli --config config.personal.yaml process --phase realtime
+#
+# FIELD CLASSIFICATION:
+#   Per-account fields (change per account):
+#     - himalaya.version, account.email, account.display_name
+#     - account.imap_host, account.imap_port, account.smtp_host, account.smtp_port
+#     - davmail.host, davmail.imap_port, davmail.smtp_port, davmail.http_proxy_port
+#
+#   Shared fields (same across all accounts, or use defaults):
+#     - llm.* (base_url, api_key, model, temperature, timeout)
+#     - rules.* (yaml_dir, python_rules_file, nl_rules_dir, evolved_dir)
+#     - pipeline.* (archive_age_months, confidence_threshold, llm_failure_alert_threshold)
+#     - logging.* (level, format)
+#
+#   Per-account override example for llm.api_key:
+#     If different accounts use different LLM API keys, move llm into the per-account
+#     section and invoke with separate configs per account.
 
 himalaya:
   # Minimum required himalaya version (must match what you have installed)
