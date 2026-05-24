@@ -165,7 +165,7 @@ class TestMoveEmail:
             assert args == [
                 "himalaya",
                 "message",
-                "copy",
+                "move",
                 "Archive/INBOX",
                 "42",
                 "-f",
