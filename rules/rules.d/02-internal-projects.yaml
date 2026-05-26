@@ -2,15 +2,26 @@
 # Priority range: 75-50
 # These handle external collaboration, customers, releases, and AI/Augment/Copilot topics
 
-# --- PRIORITY 75: Customer Willemen ---
+# --- PRIORITY 85: Customer Willemen (overrides AI — project wins over topic) ---
 - from: ".*rib-software\\.com"
   subject: ".*[Ww]illemen.*"
   folder: "2_Projects/Willemen"
-  priority: 75
+  priority: 85
 - from: ".*rib-software\\.com"
   subject: ".*[Hh]ypercare.*|[Ee]scalat.*|CRITIC.*"
   folder: "2_Projects/Willemen"
-  priority: 75
+  priority: 85
+
+# --- PRIORITY 75: Customer Willemen (senders) ---
+- from: "joe\\.deklerk@rib-software\\.com"
+  folder: "2_Projects/Willemen"
+  priority: 78
+- from: "gabriel\\.cerrada@rib-software\\.com"
+  folder: "2_Projects/Willemen"
+  priority: 78
+- from: "julien\\.seroi@rib-software\\.com"
+  folder: "2_Projects/Willemen"
+  priority: 78
 
 # --- PRIORITY 74: Customer Vinci ---
 - from: ".*rib-software\\.com"
@@ -56,8 +67,14 @@
   folder: "2_Projects/AI"
   priority: 66
 
+# --- PRIORITY 65: Sales / BoQ / Estimates / Procurement ---
+- from: ".*rib-software\\.com"
+  subject: ".*[Ss]ales.*[Cc]ommitment.*|[Bb]oQ.*|[Pp]urchase.*[Oo]rder.*|Opportunity.*[Ss]ales.*|[Ss]ales [Cc]onfig.*|[Ss]ales [Mm]anager.*|Candidate Profile.*|[Ee]stimat.*|[Cc]ost.*[Mm]odel.*|[Pp]ric.*|[Bb]udget.*[Pp]lan.*|QV.*|[Ee]stimate [Aa]i"
+  folder: "2_Projects/Sales_BoQ_Estimate_Procurement"
+  priority: 65
+
 # --- PRIORITY 50: Sales external ---
 - from: ".*"
   subject: ".*[Ss]ales.*[Cc]ommitment.*|[Oo]pportunity.*[Ll]ost.*"
-  folder: "2_Projects/Sales"
+  folder: "2_Projects/Sales_BoQ_Estimate_Procurement"
   priority: 50

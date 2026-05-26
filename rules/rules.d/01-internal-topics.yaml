@@ -5,11 +5,11 @@
 # --- PRIORITY 90: Sales / Purchase / Commitments ---
 - from: ".*rib-software\\.com"
   subject: ".*[Ss]ales.*[Cc]ommitment.*|[Bb]oQ.*|[Pp]urchase.*[Oo]rder.*"
-  folder: "2_Projects/Sales"
+  folder: "2_Projects/Sales_BoQ_Estimate_Procurement"
   priority: 90
 - from: ".*rib-software\\.com"
   subject: ".*[Ss]ales [Cc]onfig.*|[Ss]ales [Mm]anager.*|Opportunity.*[Ss]ales.*"
-  folder: "2_Projects/Sales"
+  folder: "2_Projects/Sales_BoQ_Estimate_Procurement"
   priority: 90
 
 # --- PRIORITY 89: India team ---

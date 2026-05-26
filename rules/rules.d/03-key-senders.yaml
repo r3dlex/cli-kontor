@@ -3,38 +3,9 @@
 # They go to their appropriate project/management folders.
 # The vault integration will be handled by the pipeline's --vault flag.
 
-# --- CUSTOMER-FACING SENDERS (high importance) ---
-- from: "joe\\.deklerk@rib-software\\.com"
-  folder: "2_Projects/Willemen"
-  priority: 78
-
-- from: "gabriel\\.cerrada@rib-software\\.com"
-  folder: "2_Projects/Willemen"
-  priority: 78
-
-- from: "cordula\\.trillhaas@rib-software\\.com"
-  folder: "2_Projects/Internal"
-  priority: 78
-
-- from: "adam\\.lipinski@rib-software\\.com"
-  folder: "2_Projects/Internal"
-  priority: 78
-
-- from: "a\\.k\\.dash@rib-software\\.com|ak\\.dash@rib-software\\.com"
-  folder: "2_Projects/Internal"
-  priority: 78
-
-- from: "jon\\.sigbjornsson@rib-software\\.com|jón\\.sigbjörnsson@rib-software\\.com"
-  folder: "2_Projects/Internal"
-  priority: 78
-
 # --- MANAGEMENT SENDERS ---
 - from: "arthur\\.berganski@rib-software\\.com"
   folder: "2_Projects/Internal"
-  priority: 75
-
-- from: "julien\\.seroi@rib-software\\.com"
-  folder: "2_Projects/Willemen"
   priority: 75
 
 - from: "rolf\\.helmes@rib-software\\.com"
@@ -77,3 +48,19 @@
   folder: "2_Projects/Internal"
   priority: 75
 
+# --- INTERNAL PROJECT SENDERS ---
+- from: "cordula\\.trillhaas@rib-software\\.com"
+  folder: "2_Projects/Internal"
+  priority: 78
+
+- from: "adam\\.lipinski@rib-software\\.com"
+  folder: "2_Projects/Internal"
+  priority: 78
+
+- from: "a\\.k\\.dash@rib-software\\.com|ak\\.dash@rib-software\\.com"
+  folder: "2_Projects/Internal"
+  priority: 78
+
+- from: "jon\\.sigbjornsson@rib-software\\.com|jón\\.sigbjörnsson@rib-software\\.com"
+  folder: "2_Projects/Internal"
+  priority: 78
