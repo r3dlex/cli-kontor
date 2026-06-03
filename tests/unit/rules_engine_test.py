@@ -114,6 +114,7 @@ class TestRulesEngine:
         # YAML matched first
         assert result == "YAML_Folder"
 
+
 # ---------------------------------------------------------------------------
 # Regression tests for folder-improvements-2026-06-03.md (G003)
 # These lock the four observed gaps. They should FAIL against the current
@@ -166,7 +167,9 @@ class TestGap1CalendarResponsePattern:
             yaml.safe_dump(rules, fh)
         loaded = yaml_dsl.load_rules_from_dir(tmp_path)
         result = yaml_dsl.evaluate_yaml_rules(
-            loaded, "stefan.stelzer@rib-software.com", "Abgelehnt: Weekly Sync on Track 1"
+            loaded,
+            "stefan.stelzer@rib-software.com",
+            "Abgelehnt: Weekly Sync on Track 1",
         )
         assert result == "1_Management/1on1"
 
