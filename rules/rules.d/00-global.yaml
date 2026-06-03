@@ -65,6 +65,26 @@
   folder: "1_Management/1on1"
   priority: 89
 
+# --- PRIORITY 95: Calendar response prefix (overrides 1:1 subject regex) ---
+# Lock the four English + four German calendar-response prefixes so
+# Accepted:/Declined:/Tentative:/New Time Proposed:/Angenommen:/Abgelehnt:/
+# Zugesagt:/Unsicher: always win over project-keyword 1:1 collisions.
+- subject: "^(Accepted|Declined|Tentative|New Time Proposed|Cancelled):"
+  folder: "1_Management/1on1"
+  priority: 95
+- subject: "^(Angenommen|Abgelehnt|Zugesagt|Unsicher):"
+  folder: "1_Management/1on1"
+  priority: 95
+
+# --- PRIORITY 89: External SAA-domain 1:1 senders ---
+# Georg Heißenberger sends calendar responses from both saa.at and
+# rib-software.com aliases. Without this rule, the external-domain
+# accept/decline/tentative falls through to 4_Info.
+- from: ".*@saa\\.at"
+  subject: ".*Accepted:.*|.*Declined:.*|.*Tentative:.*|.*1:1.*|one on one.*"
+  folder: "1_Management/1on1"
+  priority: 89
+
 # --- PRIORITY 88: Leadership / Executive (1_Management/Leadership) ---
 - from: ".*rib-software\\.com"
   subject: ".*[Gg]eschäftsführung.*|[Vv]orstand.*|[Tt]eilwiderruf.*|Management Board.*|[Ee]xecutive.*|[Ll]eadership.*"
