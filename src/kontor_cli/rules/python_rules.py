@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import importlib.util
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from kontor_cli.himalaya import Email
@@ -12,7 +12,7 @@ if TYPE_CHECKING:
 __all__ = ["load_python_rules", "call_python_rules"]
 
 
-def load_python_rules(rules_file: Path) -> dict:
+def load_python_rules(rules_file: Path) -> dict[str, Any]:
     """Load a Python rules module dynamically and return its namespace dict."""
     if not rules_file.exists():
         return {}
@@ -32,7 +32,7 @@ def load_python_rules(rules_file: Path) -> dict:
 
 
 def call_python_rules(
-    rules_ns: dict,
+    rules_ns: dict[str, Any],
     email: Email,
 ) -> str | None:
     """Call any `classify(email) -> str | None` function found in the rules module."""

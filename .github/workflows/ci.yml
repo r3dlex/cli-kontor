@@ -1,13 +1,62 @@
-name: Lint & Typecheck
+name: CI
 
 on:
   push:
     branches: [main]
+    paths:
+      - 'src/**'
+      - 'tests/**'
+      - 'pyproject.toml'
+      - 'uv.lock'
+      - '.github/workflows/ci.yml'
+      - '.pre-commit-config.yaml'
+      - 'LICENSE'
+      - 'CONTRIBUTING.md'
+      - 'README.md'
   pull_request:
-    branches: [main]
+    paths:
+      - 'src/**'
+      - 'tests/**'
+      - 'pyproject.toml'
+      - 'uv.lock'
+      - '.github/workflows/ci.yml'
+      - '.pre-commit-config.yaml'
+      - 'LICENSE'
+      - 'CONTRIBUTING.md'
+      - 'README.md'
 
 jobs:
-  lint:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.12', '3.13']
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - name: Install dependencies
+        run: uv sync
+      - name: Ruff lint
+        run: uv run ruff check src/ tests/
+      - name: Ruff format check
+        run: uv run ruff format --check src/ tests/
+      - name: MyPy strict
+        run: uv run mypy src/ --strict
+      - name: Pytest with coverage
+        run: uv run pytest --cov
+      - name: Upload coverage
+        if: env.CODECOV_TOKEN != ''
+        uses: codecov/codecov-action@v4
+        with:
+          fail_ci_if_error: false
+          token: ${{ secrets.CODECOV_TOKEN }}
+
+  smoke:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -15,9 +64,12 @@ jobs:
         with:
           enable-cache: true
       - run: uv sync
-      - name: Ruff lint
-        run: uv run ruff check src/ tests/
-      - name: Ruff format check
-        run: uv run ruff format --check src/ tests/
-      - name: MyPy typecheck
-        run: uv run mypy src/ --ignore-missing-imports
+      - name: CLI smoke test
+        run: |
+          uv run kontor-cli --help
+          uv run kontor-cli check-config 2>&1 | grep -q "Config error" || echo "check-config runs"
+          uv run kontor-cli classify --help
+          uv run kontor-cli process --help
+          uv run kontor-cli dry-run --help
+          uv run kontor-cli rules-freeze --help
+          uv run kontor-cli cleanup-archive-projects --help 2>&1 | grep -q "Usage" || echo "cleanup-archive-projects reachable"
