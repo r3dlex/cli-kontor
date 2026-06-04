@@ -185,6 +185,23 @@ class Pipeline:
         except OSError as exc:
             logger.error(f"Failed to write evolved rule log: {exc}")
 
+    def _summary(self, phase: str, total: int) -> dict[str, int | str]:
+        """Build the standard per-phase log summary.
+
+        Shared by Rebuild and Realtime phases (Heal uses an inline dict with
+        different fields — see `HealPipeline.run`).
+        """
+        s: dict[str, int | str] = {
+            "phase": phase,
+            "total_processed": total,
+            "moves_made": self.moves_made,
+            "skipped_already_correct": self.skipped_already_correct,
+            "skipped_loop": self.skipped_loop,
+            "llm_failures": self.llm_failures,
+        }
+        logger.info(f"Phase {phase} complete", extra={**s, "phase": phase})
+        return s
+
 
 class RebuildPipeline(Pipeline):
     """Phase 1 — Historical Rebuild: process all emails in all non-Archive folders."""
@@ -257,18 +274,6 @@ class RebuildPipeline(Pipeline):
 
         return self._summary("rebuild", total_processed)
 
-    def _summary(self, phase: str, total: int) -> dict[str, int | str]:
-        s: dict[str, int | str] = {
-            "phase": phase,
-            "total_processed": total,
-            "moves_made": self.moves_made,
-            "skipped_already_correct": self.skipped_already_correct,
-            "skipped_loop": self.skipped_loop,
-            "llm_failures": self.llm_failures,
-        }
-        logger.info(f"Phase {phase} complete", extra={**s, "phase": phase})
-        return s
-
 
 class RealtimePipeline(Pipeline):
     """Phase 2 — Real-Time Processing: process only Inbox emails."""
@@ -287,18 +292,6 @@ class RealtimePipeline(Pipeline):
             total += 1
 
         return self._summary("realtime", total)
-
-    def _summary(self, phase: str, total: int) -> dict[str, int | str]:
-        s: dict[str, int | str] = {
-            "phase": phase,
-            "total_processed": total,
-            "moves_made": self.moves_made,
-            "skipped_already_correct": self.skipped_already_correct,
-            "skipped_loop": self.skipped_loop,
-            "llm_failures": self.llm_failures,
-        }
-        logger.info(f"Phase {phase} complete", extra={**s, "phase": phase})
-        return s
 
 
 class HealPipeline(Pipeline):
