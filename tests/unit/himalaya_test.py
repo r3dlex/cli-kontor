@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import subprocess
+from datetime import datetime
 from unittest import mock
 
 import pytest
@@ -13,7 +15,9 @@ from kontor_cli.himalaya import (
     HimalayaError,
     create_folder,
     delete_email,
+    delete_folder,
     list_emails,
+    list_folders,
     move_email,
 )
 
@@ -61,6 +65,50 @@ class TestEmailFromJson:
         }
         email = Email.from_json(env, "INBOX")
         assert email.from_addr == "alt@example.com"
+
+    def test_email_from_json_from_as_string(self) -> None:
+        env = {
+            "id": "44",
+            "from": "raw@example.com",
+            "subject": "Raw",
+            "date": "2024-06-15T09:00:00Z",
+            "flags": {},
+        }
+        email = Email.from_json(env, "INBOX")
+        assert email.from_addr == "raw@example.com"
+
+    def test_email_from_json_non_string_addr(self) -> None:
+        env = {
+            "id": "45",
+            "from": {"addr": 12345},
+            "subject": "Numeric",
+            "date": "2024-06-15T09:00:00Z",
+            "flags": {},
+        }
+        email = Email.from_json(env, "INBOX")
+        assert email.from_addr == "12345"
+
+    def test_email_from_json_invalid_date_falls_back_to_now(self) -> None:
+        env = {
+            "id": "46",
+            "from": {"address": "x@y.com"},
+            "subject": "Bad date",
+            "date": "not-a-date",
+            "flags": {},
+        }
+        email = Email.from_json(env, "INBOX")
+        # Falls back to datetime.now() — just assert it's a datetime
+        assert isinstance(email.date, datetime)
+
+    def test_email_from_json_no_from_field(self) -> None:
+        env = {
+            "id": "47",
+            "subject": "Anonymous",
+            "date": "2024-06-15T09:00:00Z",
+            "flags": {},
+        }
+        email = Email.from_json(env, "INBOX")
+        assert email.from_addr == ""
 
 
 class TestListEmails:
@@ -191,3 +239,80 @@ class TestDeleteEmail:
     def test_delete_email_raises(self) -> None:
         with pytest.raises(DeleteNotSupportedError, match="not supported"):
             delete_email("42", "INBOX")
+
+
+class TestListFolders:
+    def test_list_folders_dict_format(self) -> None:
+        mock_result = mock.MagicMock()
+        mock_result.stdout = json.dumps([{"name": "INBOX"}, {"name": "Archive"}])
+
+        with mock.patch(
+            "kontor_cli.himalaya.subprocess.run", return_value=mock_result
+        ) as p:
+            folders = list_folders()
+
+        assert folders == ["INBOX", "Archive"]
+        p.assert_called_once()
+        assert p.call_args[0][0] == ["himalaya", "folder", "list", "-o", "json"]
+
+    def test_list_folders_string_format(self) -> None:
+        mock_result = mock.MagicMock()
+        mock_result.stdout = json.dumps(["INBOX", "Archive"])
+
+        with mock.patch("kontor_cli.himalaya.subprocess.run", return_value=mock_result):
+            folders = list_folders()
+
+        assert folders == ["INBOX", "Archive"]
+
+    def test_list_folders_invalid_json(self) -> None:
+        mock_result = mock.MagicMock()
+        mock_result.stdout = "not json"
+
+        with mock.patch("kontor_cli.himalaya.subprocess.run", return_value=mock_result):
+            with pytest.raises(HimalayaError, match="invalid JSON"):
+                list_folders()
+
+    def test_list_folders_non_list_response(self) -> None:
+        mock_result = mock.MagicMock()
+        mock_result.stdout = json.dumps({"oops": True})
+
+        with mock.patch("kontor_cli.himalaya.subprocess.run", return_value=mock_result):
+            with pytest.raises(HimalayaError, match="unexpected type"):
+                list_folders()
+
+    def test_list_folders_invalid_entry(self) -> None:
+        mock_result = mock.MagicMock()
+        # name is a number, not a string
+        mock_result.stdout = json.dumps([{"name": 123}])
+
+        with mock.patch("kontor_cli.himalaya.subprocess.run", return_value=mock_result):
+            with pytest.raises(HimalayaError, match="invalid folder entry"):
+                list_folders()
+
+
+class TestDeleteFolder:
+    def test_delete_folder_command(self) -> None:
+        mock_result = mock.MagicMock()
+        mock_result.returncode = 0
+
+        with mock.patch(
+            "kontor_cli.himalaya.subprocess.run", return_value=mock_result
+        ) as p:
+            delete_folder("2_Projects/Old")
+            p.assert_called_once()
+            assert p.call_args[0][0] == [
+                "himalaya",
+                "folder",
+                "delete",
+                "2_Projects/Old",
+            ]
+
+
+class TestRunErrors:
+    def test_himalaya_command_failure(self) -> None:
+        exc = subprocess.CalledProcessError(
+            returncode=1, cmd=["himalaya"], stderr="boom"
+        )
+        with mock.patch("kontor_cli.himalaya.subprocess.run", side_effect=exc):
+            with pytest.raises(HimalayaError, match="command failed"):
+                list_emails("INBOX")

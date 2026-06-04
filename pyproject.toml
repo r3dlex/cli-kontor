@@ -50,8 +50,12 @@ ignore_missing_imports = true
 
 [tool.coverage.run]
 source = ["src/kontor_cli"]
-omit = ["src/kontor_cli/vault_integration.py"]
 
 [tool.coverage.report]
-fail_under = 75
+fail_under = 90
 show_missing = true
+exclude_lines = [
+    "pragma: no cover",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+]

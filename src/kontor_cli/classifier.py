@@ -211,9 +211,8 @@ class Classifier:
                     content = content[:-3].strip()
             result: dict[str, Any] = json.loads(content)
         except (KeyError, IndexError, json.JSONDecodeError) as exc:
-            logger.error(
-                f"Failed to parse LLM response: {exc!r} — content: {content[:200]}"
-            )
+            snippet = content[:200] if "content" in locals() else "<unparsed>"
+            logger.error(f"Failed to parse LLM response: {exc!r} — content: {snippet}")
             return None
 
         folder = result.get("folder", "4_Info")
