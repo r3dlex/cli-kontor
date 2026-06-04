@@ -36,7 +36,7 @@ class JSONFormatter(logging.Formatter):
         return json.dumps(payload) + "\n"
 
 
-class FlushingStreamHandler(logging.StreamHandler):
+class FlushingStreamHandler(logging.StreamHandler[Any]):
     """StreamHandler that flushes after every emit."""
 
     def emit(self, record: logging.LogRecord) -> None:

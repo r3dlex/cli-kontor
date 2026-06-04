@@ -6,6 +6,7 @@ import json
 import logging
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 from kontor_cli.classifier import ClassificationResult, Classifier
 from kontor_cli.config import Config
@@ -188,7 +189,7 @@ class Pipeline:
 class RebuildPipeline(Pipeline):
     """Phase 1 — Historical Rebuild: process all emails in all non-Archive folders."""
 
-    def run(self, dry_run: bool = False) -> dict:
+    def run(self, dry_run: bool = False) -> dict[str, Any]:
         logger.info("Starting Historical Rebuild", extra={"phase": "rebuild"})
         total_processed = 0
         folders = [
@@ -256,8 +257,8 @@ class RebuildPipeline(Pipeline):
 
         return self._summary("rebuild", total_processed)
 
-    def _summary(self, phase: str, total: int) -> dict:
-        s = {
+    def _summary(self, phase: str, total: int) -> dict[str, int | str]:
+        s: dict[str, int | str] = {
             "phase": phase,
             "total_processed": total,
             "moves_made": self.moves_made,
@@ -272,7 +273,7 @@ class RebuildPipeline(Pipeline):
 class RealtimePipeline(Pipeline):
     """Phase 2 — Real-Time Processing: process only Inbox emails."""
 
-    def run(self, dry_run: bool = False) -> dict:
+    def run(self, dry_run: bool = False) -> dict[str, Any]:
         logger.info("Starting Real-Time Processing", extra={"phase": "realtime"})
         try:
             emails = list_emails("INBOX", cwd=self.cwd)
@@ -287,8 +288,8 @@ class RealtimePipeline(Pipeline):
 
         return self._summary("realtime", total)
 
-    def _summary(self, phase: str, total: int) -> dict:
-        s = {
+    def _summary(self, phase: str, total: int) -> dict[str, int | str]:
+        s: dict[str, int | str] = {
             "phase": phase,
             "total_processed": total,
             "moves_made": self.moves_made,
@@ -303,7 +304,7 @@ class RealtimePipeline(Pipeline):
 class HealPipeline(Pipeline):
     """Phase 3 — Self-Healing Loop: scan all folders for invariant violations."""
 
-    def run(self, dry_run: bool = False) -> dict:
+    def run(self, dry_run: bool = False) -> dict[str, int | str]:
         logger.info("Starting Self-Healing Loop", extra={"phase": "heal"})
         folders = [
             "INBOX",
@@ -391,7 +392,7 @@ class HealPipeline(Pipeline):
                     if not dry_run:
                         violations_fixed += 1
 
-        s = {
+        s: dict[str, int | str] = {
             "phase": "heal",
             "emails_scanned": total,
             "violations_found": violations_found,
