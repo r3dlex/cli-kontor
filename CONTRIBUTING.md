@@ -1,0 +1,31 @@
+# Contributing
+
+Thanks for considering a contribution.
+
+## Setup
+1. Clone: `git clone git@github.com:r3dlex/kontor-cli.git && cd kontor-cli`
+2. Install: `uv sync`
+3. Copy `config.example.yaml` to `config.yaml` and fill in your credentials (never commit `config.yaml`).
+4. Install pre-commit: `uvx pre-commit install`
+
+## Development workflow
+- Follow TDD: write a failing test in `tests/unit/`, watch it fail, then make it pass.
+- Never delete emails — `delete_email()` raises `DeleteNotSupportedError`. Move to Archive instead.
+- No credentials in source. Use `config.yaml` (gitignored) or env vars.
+
+## Tests
+```bash
+uv run pytest tests/unit/ -v
+```
+
+## Lint & typecheck
+```bash
+uv run ruff check src/ tests/
+uv run ruff format --check src/ tests/
+uv run mypy src/ --strict
+```
+
+## Pull requests
+- One PR per logical change.
+- All local CI gates must pass before requesting review.
+- Reference any related issue.

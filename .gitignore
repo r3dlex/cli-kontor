@@ -16,4 +16,6 @@ htmlcov/
 .ruff_cache/
 .omx/
 .antigravitycli/
+.omc/
+config.work.yaml
 config.yaml
