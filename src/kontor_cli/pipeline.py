@@ -124,9 +124,17 @@ class Pipeline:
                 },
             )
         except HimalayaError as exc:
-            logger.error(
-                f"Failed to move email {email.id}: {exc}", extra={"email_id": email.id}
-            )
+            if "not found" in str(exc).lower():
+                # Target folder does not exist in Exchange — skip gracefully
+                logger.warning(
+                    f"Skipping email {email.id}: target folder '{target}' not found in Exchange",
+                    extra={"email_id": email.id, "folder": target},
+                )
+            else:
+                logger.error(
+                    f"Failed to move email {email.id}: {exc}",
+                    extra={"email_id": email.id},
+                )
 
         return target  # type: ignore[no-any-return]
 
