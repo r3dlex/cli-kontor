@@ -20,6 +20,12 @@ export const rules = defineRules({
       message: "himalaya subprocess calls must use check=True to catch failures early.",
     },
   ],
+  frontend: [
+    // No frontend rules — kontor-cli is a Python backend CLI with no UI.
+  ],
+  data: [
+    // No data-domain rules — kontor-cli does not own a database.
+  ],
   general: [
     {
       id: "no-silent-except",
