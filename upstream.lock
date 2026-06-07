@@ -2,11 +2,11 @@
   "schema_version": "1.0",
   "source": {
     "type": "git",
-    "url": "git@github.com:br4vesirrobin/kontor-cli.git",
+    "url": "git@github.com:r3dlex/cli-kontor.git",
     "ref": "main"
   },
   "via": "r3dlex/ai-tool-workspace",
-  "pinned_sha": "8e5c19c208937b7b44de628ca9d3af4fe63540e7",
+  "pinned_sha": "e068ffad85c443551c35a0723e34d9989d0826e5",
   "update_date": "2026-06-07",
   "sync_script": "scripts/sync-upstream.sh"
 }
