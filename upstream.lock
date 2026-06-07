@@ -2,7 +2,7 @@
   "schema_version": "1.0",
   "source": {
     "type": "git",
-    "url": "https://github.com/br4vesirrobin/kontor-cli.git",
+    "url": "git@github.com:br4vesirrobin/kontor-cli.git",
     "ref": "main"
   },
   "via": "r3dlex/ai-tool-workspace",
