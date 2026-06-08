@@ -40,3 +40,8 @@ uv run mypy src/ --ignore-missing-imports
 - Emails must **never be deleted** — only moved to Archive
 - `config.yaml` is gitignored — use `config.example.yaml` as template
 - No credentials in source code — all secrets via config or env
+
+<!-- v3-ai-sdlc-init:start -->
+## v3
+See `.ai/matrix.json` and `AGENTS.md` for the operating contract.
+<!-- v3-ai-sdlc-init:end -->

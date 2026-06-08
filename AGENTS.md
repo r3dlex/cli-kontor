@@ -27,3 +27,8 @@ uv run pytest tests/unit/ -v --tb=short   # must be green
 uv run ruff check src/ tests/             # 0 errors
 uv run mypy src/ --ignore-missing-imports # 0 errors
 ```
+
+<!-- v3-ai-sdlc-init:start -->
+## AI SDLC v3
+This repo follows the v3 AI-SDLC layout. See `.ai/matrix.json`, `.memory/human-override/`, and `docs/architecture/adr/`. Modules at `r3dlex/skills/ai-sdlc-init/modules/`.
+<!-- v3-ai-sdlc-init:end -->
