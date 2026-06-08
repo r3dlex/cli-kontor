@@ -7,8 +7,13 @@ on:
     branches: [main]
 
 jobs:
-  lint:
-    runs-on: ubuntu-latest
+  _lint-self-hosted:
+    name: "lint (self-hosted)"
+    runs-on: [self-hosted, ubuntu-latest]
+    timeout-minutes: 30
+    continue-on-error: true
+    outputs:
+      passed: ${{ steps.mark.outputs.passed }}
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v4
@@ -20,4 +25,32 @@ jobs:
       - name: Ruff format check
         run: uv run ruff format --check src/ tests/
       - name: MyPy typecheck
+        run: uv run mypy src/ --ignore-missing-imports
+      - id: mark
+        if: success()
+        run: echo "passed=true" >> "$GITHUB_OUTPUT"
+
+  lint:
+    needs: _lint-self-hosted
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Route
+        run: echo "passed=${{ needs._lint-self-hosted.outputs.passed }}"
+      - uses: actions/checkout@v4
+        if: needs._lint-self-hosted.outputs.passed != 'true'
+      - uses: astral-sh/setup-uv@v4
+        if: needs._lint-self-hosted.outputs.passed != 'true'
+        with:
+          enable-cache: true
+      - run: uv sync
+        if: needs._lint-self-hosted.outputs.passed != 'true'
+      - name: Ruff lint
+        if: needs._lint-self-hosted.outputs.passed != 'true'
+        run: uv run ruff check src/ tests/
+      - name: Ruff format check
+        if: needs._lint-self-hosted.outputs.passed != 'true'
+        run: uv run ruff format --check src/ tests/
+      - name: MyPy typecheck
+        if: needs._lint-self-hosted.outputs.passed != 'true'
         run: uv run mypy src/ --ignore-missing-imports
