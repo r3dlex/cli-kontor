@@ -25,5 +25,9 @@ hooks = [
 repo = "https://github.com/pre-commit/mirrors-mypy"
 rev = "v1.11.0"
 hooks = [
-  { id = "mypy", pass_filenames = false, additional_dependencies = ["types-PyYAML", "types-python-dateutil"] },
+  # pass_filenames = false so we control the target list; we point mypy at
+  # the actual package directory and the rules subpackage so it picks up the
+  # sources in this repo. Without args, mypy exits with
+  # "Missing target module, package, files, or command".
+  { id = "mypy", pass_filenames = false, args = ["src/kontor_cli", "rules"], additional_dependencies = ["types-PyYAML", "types-python-dateutil"] },
 ]
