@@ -25,6 +25,8 @@ uv run ruff format --check src/ tests/
 uv run mypy src/ --ignore-missing-imports
 ```
 
+mypy runs in strict mode: `strict = true` is set in `pyproject.toml`.
+
 ## Pull requests
 - One PR per logical change.
 - All local CI gates must pass before requesting review.
