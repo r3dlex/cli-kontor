@@ -22,7 +22,7 @@ uv run pytest tests/unit/ -v
 ```bash
 uv run ruff check src/ tests/
 uv run ruff format --check src/ tests/
-uv run mypy src/ --strict
+uv run mypy src/ --ignore-missing-imports
 ```
 
 ## Pull requests

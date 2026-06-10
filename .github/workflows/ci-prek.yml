@@ -18,11 +18,15 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install prek
-        run: pip install prek
+      # uvx avoids the runner's system Python; bare pip broke on the
+      # self-hosted runner's damaged cached 3.11 toolchain.
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
 
       - name: Run prek
-        run: prek run --all-files
+        run: uvx prek run --all-files
 
       - name: Validate .rules.ts
         run: bash scripts/validate-rules.sh
@@ -47,13 +51,15 @@ jobs:
         if: needs._prek-check-self-hosted.outputs.passed != 'true'
         uses: actions/checkout@v4
 
-      - name: Install prek
+      - name: Install uv
         if: needs._prek-check-self-hosted.outputs.passed != 'true'
-        run: pip install prek
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
 
       - name: Run prek
         if: needs._prek-check-self-hosted.outputs.passed != 'true'
-        run: prek run --all-files
+        run: uvx prek run --all-files
 
       - name: Validate .rules.ts
         if: needs._prek-check-self-hosted.outputs.passed != 'true'
