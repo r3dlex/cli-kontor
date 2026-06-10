@@ -72,9 +72,11 @@ class TestRestoreArchiveProjects:
             "42",
             "Archive/2_Projects/Augment",
             "2_Projects/Augment",
-            cwd="/tmp/project",
+            cwd=Path("/tmp/project"),
         )
-        delete.assert_called_once_with("Archive/2_Projects/AI", cwd="/tmp/project")
+        delete.assert_called_once_with(
+            "Archive/2_Projects/AI", cwd=Path("/tmp/project")
+        )
         assert report["inbox_exists"] is True
         assert report["archive_root_exists"] is True
         assert report["moved_messages"] == 1

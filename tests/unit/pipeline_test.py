@@ -351,20 +351,16 @@ class TestHealPipelineViolationPaths:
     def test_heal_pipeline_archive_violation_fixed(self, tmp_path: Path) -> None:
         from kontor_cli.pipeline import HealPipeline
 
-        # 100-day-old email that should be archived
-        old_email = _email("old-1", "INBOX", days_ago=100)
-        # Need to mock get_target_for_email to return an Archive/ path
+        # Email older than the 6-month archive age: the folder policy
+        # redirects its classified folder to the Archive mirror path.
+        old_email = _email("old-1", "2_Projects/PRJ_Test", days_ago=300)
         with (
             mock.patch("kontor_cli.pipeline.list_emails", return_value=[old_email]),
             mock.patch("kontor_cli.pipeline.move_email"),
             mock.patch("kontor_cli.pipeline.create_folder"),
-            mock.patch(
-                "kontor_cli.pipeline.get_target_for_email",
-                return_value="Archive/INBOX",
-            ),
         ):
             p = HealPipeline(MockConfig(), cwd=tmp_path)
-            p.rules_engine.classify = lambda e: "INBOX"
+            p.rules_engine.classify = lambda e: "2_Projects/PRJ_Test"
             p.rules_engine.get_nl_context = lambda: ""
             result = p.run(dry_run=False)
 
@@ -375,18 +371,16 @@ class TestHealPipelineViolationPaths:
     def test_heal_pipeline_wrong_folder_violation(self, tmp_path: Path) -> None:
         from kontor_cli.pipeline import HealPipeline
 
+        # Recent email sitting in INBOX while the rules classify it elsewhere:
+        # target differs from the current folder, so heal flags a violation.
         email = _email("moved-1", "INBOX", days_ago=10)
         with (
             mock.patch("kontor_cli.pipeline.list_emails", return_value=[email]),
             mock.patch("kontor_cli.pipeline.move_email"),
             mock.patch("kontor_cli.pipeline.create_folder"),
-            mock.patch(
-                "kontor_cli.pipeline.get_target_for_email",
-                return_value="2_Projects/PRJ_Test",
-            ),
         ):
             p = HealPipeline(MockConfig(), cwd=tmp_path)
-            p.rules_engine.classify = lambda e: "INBOX"
+            p.rules_engine.classify = lambda e: "2_Projects/PRJ_Test"
             p.rules_engine.get_nl_context = lambda: ""
             result = p.run(dry_run=True)
 

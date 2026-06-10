@@ -550,10 +550,6 @@ class TestPipelineGaps:
             mock.patch("kontor_cli.pipeline.list_emails", return_value=[email]),
             mock.patch("kontor_cli.pipeline.move_email"),
             mock.patch("kontor_cli.pipeline.create_folder"),
-            mock.patch(
-                "kontor_cli.pipeline.get_target_for_email",
-                return_value="2_Projects/PRJ_Test",
-            ),
         ):
             p = HealPipeline(MockConfig(), cwd=tmp_path)
             p.rules_engine.classify = lambda e: "2_Projects/PRJ_Test"

@@ -74,4 +74,4 @@ class RulesEngine:
 
     def get_nl_context(self) -> str:
         """Return formatted NL rules for LLM prompt injection."""
-        return nl_rules.nl_rules_context(self.nl_rules)  # type: ignore[no-any-return]
+        return nl_rules.nl_rules_context(self.nl_rules)
