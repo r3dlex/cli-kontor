@@ -6,11 +6,12 @@ import json
 import logging
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 from kontor_cli.classifier import ClassificationResult, Classifier
 from kontor_cli.config import Config
 from kontor_cli.folders import (
-    get_target_for_email,
+    FolderPolicy,
     is_valid_folder,
 )
 from kontor_cli.himalaya import (
@@ -24,6 +25,59 @@ from kontor_cli.rules_engine import RulesEngine
 
 logger = logging.getLogger("kontor_cli.pipeline")
 
+# Scan scope for the Rebuild and Heal phases: every live taxonomy folder
+# plus legacy folders that still hold unprocessed emails.
+SCAN_FOLDERS = (
+    "INBOX",
+    "0_Action",
+    "1_Management",
+    "1_Management/1on1",
+    "1_Management/HR",
+    "1_Management/Leadership",
+    "2_Projects",
+    "2_Projects/Internal",
+    "2_Projects/Willemen",
+    "2_Projects/Eiffage",
+    "2_Projects/Vinci",
+    "2_Projects/Budimex",
+    "2_Projects/Releases",
+    "2_Projects/RIB-4.0/AI",
+    "2_Projects/Augment",
+    "2_Projects/AzureSigning",
+    "2_Projects/Development",
+    "2_Projects/China",
+    "2_Projects/Trivium",
+    "2_Projects/Sales_BoQ_Estimate_Procurement",
+    "2_Projects/Security",
+    "2_Projects/Finance",
+    "2_Projects/Infrastructure",
+    "3_External",
+    "3_External/Trivium",
+    "3_External/Miro",
+    "3_External/GitHub",
+    "3_External/Mitarbeiterangebote",
+    "3_External/Reportlinker",
+    "3_External/CoachHub",
+    "3_External/Viseo",
+    "3_External/HeroDevs",
+    "3_External/Microsoft",
+    "4_Info",
+    "9_System",
+    # Legacy folders (still have unprocessed emails)
+    "Projects",
+    "Executive",
+    "Admin",
+    "Finance",
+    "HR",
+    "Releases",
+    "Security",
+    "Travel",
+    "Newsletters",
+    "Logs",
+    "Review",
+    "Communication",
+)
+
 
 class Pipeline:
     """Base pipeline with shared infrastructure."""
@@ -33,6 +87,7 @@ class Pipeline:
         self.cwd = cwd
         self.rules_engine = RulesEngine(config, cwd)
         self.classifier = Classifier(config)
+        self.folder_policy = FolderPolicy(config.pipeline_archive_months)
         self.move_history: set[tuple[str, str]] = set()  # (email_id, folder)
         self.moves_made = 0
         self.skipped_already_correct = 0
@@ -55,31 +110,22 @@ class Pipeline:
             self._created_folders.add(folder)
             pass
 
+    def _classify(self, email: Email) -> str | None:
+        """Classify via the rules engine; fall back to the LLM when no rule matches."""
+        classified = self.rules_engine.classify(email)
+        if classified is not None:
+            return classified
+        result = self._llm_classify(email)
+        return result.folder if result else None
+
     def _process_email(self, email: Email, dry_run: bool = False) -> str | None:
-        """Process a single email: classify → enforce archive → move."""
+        """Process a single email: classify → decide target folder → move."""
         current_folder = email.folder
 
-        # Step 1: rules engine classification
-        classified = self.rules_engine.classify(email)
-        target = get_target_for_email(
-            email.date,
-            classified,
-            archive_age_months=self.config.pipeline_archive_months,
-        )
+        # Step 1: classify (rules, then LLM fallback) and decide the target
+        target = self.folder_policy.target_for(email.date, self._classify(email))
 
-        # Step 2: If no rule matched, fall back to LLM
-        if classified is None:
-            result = self._llm_classify(email)
-            if result:
-                target = get_target_for_email(
-                    email.date,
-                    result.folder,
-                    archive_age_months=self.config.pipeline_archive_months,
-                )
-            else:
-                target = "4_Info"
-
-        # Step 3: Loop prevention
+        # Step 2: Loop prevention
         if (email.id, target) in self.move_history:
             self.skipped_loop += 1
             logger.info(
@@ -89,16 +135,16 @@ class Pipeline:
             return None
         self.move_history.add((email.id, target))
 
-        # Step 4: Already in correct folder
+        # Step 3: Already in correct folder
         if current_folder == target:
             self.skipped_already_correct += 1
             logger.debug(
                 f"Email {email.id} already in correct folder: {target}",
                 extra={"email_id": email.id},
             )
-            return target  # type: ignore[no-any-return]
+            return target
 
-        # Step 5: Dry run
+        # Step 4: Dry run
         if dry_run:
             logger.info(
                 f"[DRY-RUN] Would move email {email.id} from {current_folder} to {target}",
@@ -108,9 +154,9 @@ class Pipeline:
                     "moves_made": self.moves_made,
                 },
             )
-            return target  # type: ignore[no-any-return]
+            return target
 
-        # Step 6: Move the email
+        # Step 5: Move the email
         try:
             self._ensure_folder(target)
             move_email(email.id, current_folder, target, cwd=self.cwd)
@@ -124,11 +170,19 @@ class Pipeline:
                 },
             )
         except HimalayaError as exc:
-            logger.error(
-                f"Failed to move email {email.id}: {exc}", extra={"email_id": email.id}
-            )
+            if "not found" in str(exc).lower():
+                # Target folder does not exist in Exchange — skip gracefully
+                logger.warning(
+                    f"Skipping email {email.id}: target folder '{target}' not found in Exchange",
+                    extra={"email_id": email.id, "folder": target},
+                )
+            else:
+                logger.error(
+                    f"Failed to move email {email.id}: {exc}",
+                    extra={"email_id": email.id},
+                )
 
-        return target  # type: ignore[no-any-return]
+        return target
 
     def _llm_classify(self, email: Email) -> ClassificationResult | None:
         """Classify via LLM with retry and failure tracking."""
@@ -176,66 +230,31 @@ class Pipeline:
         except OSError as exc:
             logger.error(f"Failed to write evolved rule log: {exc}")
 
+    def _summary(self, phase: str, total: int) -> dict[str, int | str]:
+        """Build the standard per-phase log summary.
+
+        Shared by Rebuild and Realtime phases (Heal uses an inline dict with
+        different fields — see `HealPipeline.run`).
+        """
+        s: dict[str, int | str] = {
+            "phase": phase,
+            "total_processed": total,
+            "moves_made": self.moves_made,
+            "skipped_already_correct": self.skipped_already_correct,
+            "skipped_loop": self.skipped_loop,
+            "llm_failures": self.llm_failures,
+        }
+        logger.info(f"Phase {phase} complete", extra={**s, "phase": phase})
+        return s
+
 
 class RebuildPipeline(Pipeline):
     """Phase 1 — Historical Rebuild: process all emails in all non-Archive folders."""
 
-    def run(self, dry_run: bool = False) -> dict:
+    def run(self, dry_run: bool = False) -> dict[str, Any]:
         logger.info("Starting Historical Rebuild", extra={"phase": "rebuild"})
         total_processed = 0
-        folders = [
-            "INBOX",
-            "0_Action",
-            "1_Management",
-            "1_Management/1on1",
-            "1_Management/HR",
-            "1_Management/Leadership",
-            "2_Projects",
-            "2_Projects/Internal",
-            "2_Projects/Willemen",
-            "2_Projects/Eiffage",
-            "2_Projects/Vinci",
-            "2_Projects/Budimex",
-            "2_Projects/Releases",
-            "2_Projects/RIB-4.0/AI",
-            "2_Projects/Augment",
-            "2_Projects/AzureSigning",
-            "2_Projects/Development",
-            "2_Projects/China",
-            "2_Projects/Trivium",
-            "2_Projects/Sales_BoQ_Estimate_Procurement",
-            "2_Projects/Security",
-            "2_Projects/Finance",
-            "2_Projects/Infrastructure",
-            "3_External",
-            "3_External/Trivium",
-            "3_External/Miro",
-            "3_External/GitHub",
-            "3_External/Mitarbeiterangebote",
-            "3_External/Reportlinker",
-            "3_External/CoachHub",
-            "3_External/Viseo",
-            "3_External/HeroDevs",
-            "3_External/Microsoft",
-            "4_Info",
-            "9_System",
-            # Legacy folders (still have unprocessed emails)
-            "Projects",
-            "Executive",
-            "Admin",
-            "Finance",
-            "HR",
-            "2_Projects/Sales_BoQ_Estimate_Procurement",
-            "Releases",
-            "Security",
-            "Travel",
-            "Newsletters",
-            "Logs",
-            "Review",
-            "Communication",
-        ]
-
-        for folder in folders:
+        for folder in SCAN_FOLDERS:
             try:
                 emails = list_emails(folder, cwd=self.cwd)
             except HimalayaError as exc:
@@ -248,23 +267,11 @@ class RebuildPipeline(Pipeline):
 
         return self._summary("rebuild", total_processed)
 
-    def _summary(self, phase: str, total: int) -> dict:
-        s = {
-            "phase": phase,
-            "total_processed": total,
-            "moves_made": self.moves_made,
-            "skipped_already_correct": self.skipped_already_correct,
-            "skipped_loop": self.skipped_loop,
-            "llm_failures": self.llm_failures,
-        }
-        logger.info(f"Phase {phase} complete", extra={**s, "phase": phase})
-        return s
-
 
 class RealtimePipeline(Pipeline):
     """Phase 2 — Real-Time Processing: process only Inbox emails."""
 
-    def run(self, dry_run: bool = False) -> dict:
+    def run(self, dry_run: bool = False) -> dict[str, Any]:
         logger.info("Starting Real-Time Processing", extra={"phase": "realtime"})
         try:
             emails = list_emails("INBOX", cwd=self.cwd)
@@ -279,81 +286,17 @@ class RealtimePipeline(Pipeline):
 
         return self._summary("realtime", total)
 
-    def _summary(self, phase: str, total: int) -> dict:
-        s = {
-            "phase": phase,
-            "total_processed": total,
-            "moves_made": self.moves_made,
-            "skipped_already_correct": self.skipped_already_correct,
-            "skipped_loop": self.skipped_loop,
-            "llm_failures": self.llm_failures,
-        }
-        logger.info(f"Phase {phase} complete", extra={**s, "phase": phase})
-        return s
-
 
 class HealPipeline(Pipeline):
     """Phase 3 — Self-Healing Loop: scan all folders for invariant violations."""
 
-    def run(self, dry_run: bool = False) -> dict:
+    def run(self, dry_run: bool = False) -> dict[str, int | str]:
         logger.info("Starting Self-Healing Loop", extra={"phase": "heal"})
-        folders = [
-            "INBOX",
-            "0_Action",
-            "1_Management",
-            "1_Management/1on1",
-            "1_Management/HR",
-            "1_Management/Leadership",
-            "2_Projects",
-            "2_Projects/Internal",
-            "2_Projects/Willemen",
-            "2_Projects/Eiffage",
-            "2_Projects/Vinci",
-            "2_Projects/Budimex",
-            "2_Projects/Releases",
-            "2_Projects/RIB-4.0/AI",
-            "2_Projects/Augment",
-            "2_Projects/AzureSigning",
-            "2_Projects/Development",
-            "2_Projects/China",
-            "2_Projects/Trivium",
-            "2_Projects/Sales_BoQ_Estimate_Procurement",
-            "2_Projects/Security",
-            "2_Projects/Finance",
-            "2_Projects/Infrastructure",
-            "3_External",
-            "3_External/Trivium",
-            "3_External/Miro",
-            "3_External/GitHub",
-            "3_External/Mitarbeiterangebote",
-            "3_External/Reportlinker",
-            "3_External/CoachHub",
-            "3_External/Viseo",
-            "3_External/HeroDevs",
-            "3_External/Microsoft",
-            "4_Info",
-            "9_System",
-            # Legacy folders (still have unprocessed emails)
-            "Projects",
-            "Executive",
-            "Admin",
-            "Finance",
-            "HR",
-            "2_Projects/Sales_BoQ_Estimate_Procurement",
-            "Releases",
-            "Security",
-            "Travel",
-            "Newsletters",
-            "Logs",
-            "Review",
-            "Communication",
-        ]
-
         total = 0
         violations_found = 0
         violations_fixed = 0
 
-        for folder in folders:
+        for folder in SCAN_FOLDERS:
             try:
                 emails = list_emails(folder, cwd=self.cwd)
             except HimalayaError:
@@ -362,11 +305,7 @@ class HealPipeline(Pipeline):
             for email in emails:
                 total += 1
                 classified = self.rules_engine.classify(email)
-                target = get_target_for_email(
-                    email.date,
-                    classified,
-                    archive_age_months=self.config.pipeline_archive_months,
-                )
+                target = self.folder_policy.target_for(email.date, classified)
 
                 # Violation: email should be in Archive (too old) but isn't
                 if target.startswith("Archive/"):
@@ -383,7 +322,7 @@ class HealPipeline(Pipeline):
                     if not dry_run:
                         violations_fixed += 1
 
-        s = {
+        s: dict[str, int | str] = {
             "phase": "heal",
             "emails_scanned": total,
             "violations_found": violations_found,

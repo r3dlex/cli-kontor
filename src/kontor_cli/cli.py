@@ -6,6 +6,7 @@ import logging
 import sys
 from datetime import UTC
 from pathlib import Path
+from typing import Any
 
 import click
 
@@ -111,13 +112,9 @@ def classify(
     result = engine.classify(email)
     nl_context = engine.get_nl_context()
 
-    from kontor_cli.folders import get_target_for_email
+    from kontor_cli.folders import FolderPolicy
 
-    target = get_target_for_email(
-        email.date,
-        result,
-        archive_age_months=cfg.pipeline_archive_months,
-    )
+    target = FolderPolicy(cfg.pipeline_archive_months).target_for(email.date, result)
 
     if recommend:
         import json
@@ -142,7 +139,9 @@ def classify(
                 "3_External/EXT_<Company>_<Topic>": "External parties: vendors, partners, clients",
                 "4_Info": "Informational only: newsletters, announcements",
                 "9_System": "System emails: CI/CD, security alerts, infra",
-                "Archive/<same_path>": "Emails >6 months old",
+                "Archive/<same_path>": (
+                    f"Emails older than {cfg.pipeline_archive_months} months"
+                ),
             },
         }
         click.echo(json.dumps(payload, indent=2))
@@ -185,17 +184,15 @@ def process(
     # Determine project root (where config.yaml lives)
     root = (config_path or Path.cwd() / "config.yaml").parent
 
+    result: dict[str, Any]
     if phase == "rebuild":
-        pipeline = RebuildPipeline(cfg, cwd=root)
-        result = pipeline.run(dry_run=dry_run)
+        result = RebuildPipeline(cfg, cwd=root).run(dry_run=dry_run)
     elif phase == "realtime":
-        pipeline = RealtimePipeline(cfg, cwd=root)
-        result = pipeline.run(dry_run=dry_run)
+        result = RealtimePipeline(cfg, cwd=root).run(dry_run=dry_run)
     elif phase == "heal":
         if rules_freeze:
             _rules_freeze(cfg, root)
-        pipeline = HealPipeline(cfg, cwd=root)
-        result = pipeline.run(dry_run=dry_run)
+        result = HealPipeline(cfg, cwd=root).run(dry_run=dry_run)
     else:
         click.echo(f"Unknown phase: {phase}", err=True)
         sys.exit(1)

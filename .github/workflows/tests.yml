@@ -41,7 +41,7 @@ jobs:
       - name: Run with Python 3.12 only (lint + typecheck)
         if: matrix.python-version == '3.12'
         run: |
-          uv run ruff check src/
+          uv run ruff check src/ tests/
           uv run mypy src/ --ignore-missing-imports
 
   _test-gate:
@@ -94,7 +94,7 @@ jobs:
       - name: Run with Python 3.12 only (lint + typecheck)
         if: needs._test-gate.outputs.passed != 'true' && matrix.python-version == '3.12'
         run: |
-          uv run ruff check src/
+          uv run ruff check src/ tests/
           uv run mypy src/ --ignore-missing-imports
 
   _smoke-self-hosted:

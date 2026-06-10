@@ -1,7 +1,13 @@
-"""Folder taxonomy model and archive enforcement for kontor-cli."""
+"""Folder taxonomy model and the folder policy for kontor-cli.
+
+The folder policy is the single place that decides where an email lands:
+taxonomy default for unclassified emails, and age-based archive enforcement
+(the operational arm of ADR-0001 move-only).
+"""
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime
 
 from dateutil.relativedelta import relativedelta
@@ -84,38 +90,32 @@ def get_archive_path(folder: str) -> str:
     return f"{ARCHIVE_ROOT}/{folder}"
 
 
-def is_older_than_6months(date: datetime) -> bool:
-    """Return True if date is strictly older than 6 months from now."""
-    threshold = datetime.now(date.tzinfo) - relativedelta(months=6)
-    return date < threshold  # type: ignore[no-any-return]
+@dataclass(frozen=True, slots=True)
+class FolderPolicy:
+    """The folder decision: where does an email land, given its classification.
 
-
-def get_target_for_email(
-    email_date: datetime,
-    classified_folder: str | None,
-    archive_age_months: int = 6,
-) -> str:
-    """Determine the target folder for an email.
-
-    If the email is older than archive_age_months and is not already
-    in the Archive tree, redirect to the Archive mirror path.
-    Otherwise return the classified folder (or 4_Info if None).
+    Owns the taxonomy default (unclassified emails land in 4_Info, and are
+    never archive-enforced) and archive enforcement (classified emails older
+    than archive_age_months are redirected to their Archive mirror path).
     """
-    if classified_folder is None:
-        return "4_Info"
 
-    # Check if already in Archive tree
-    if (
-        classified_folder.startswith(ARCHIVE_ROOT + "/")
-        or classified_folder == ARCHIVE_ROOT
-    ):
+    archive_age_months: int = 6
+
+    def target_for(self, email_date: datetime, classified_folder: str | None) -> str:
+        """Return the final target folder for an email."""
+        if classified_folder is None:
+            return "4_Info"
+
+        if (
+            classified_folder.startswith(ARCHIVE_ROOT + "/")
+            or classified_folder == ARCHIVE_ROOT
+        ):
+            return classified_folder
+
+        threshold = datetime.now(email_date.tzinfo) - relativedelta(
+            months=self.archive_age_months
+        )
+        if email_date < threshold:
+            return get_archive_path(classified_folder)
+
         return classified_folder
-
-    # Apply archive enforcement
-    threshold = datetime.now(email_date.tzinfo) - relativedelta(
-        months=archive_age_months
-    )
-    if email_date < threshold:
-        return get_archive_path(classified_folder)
-
-    return classified_folder

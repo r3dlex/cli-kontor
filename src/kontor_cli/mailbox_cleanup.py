@@ -51,7 +51,7 @@ def restore_archive_projects(
     dry_run: bool = False, cwd: Path | None = None
 ) -> dict[str, Any]:
     """Move archive project emails back to live folders and prune empty orphans."""
-    folder_names = list_folders(cwd=str(cwd) if cwd else None)
+    folder_names = list_folders(cwd=cwd)
     plans = plan_archive_project_cleanup(folder_names)
 
     moved_messages = 0
@@ -60,7 +60,7 @@ def restore_archive_projects(
     folder_results: list[dict[str, Any]] = []
 
     for plan in plans:
-        emails = list_emails(plan.archive_folder, cwd=str(cwd) if cwd else None)
+        emails = list_emails(plan.archive_folder, cwd=cwd)
         message_count = len(emails)
 
         if plan.live_exists:
@@ -73,13 +73,13 @@ def restore_archive_projects(
                             email.id,
                             plan.archive_folder,
                             plan.live_folder,
-                            cwd=str(cwd) if cwd else None,
+                            cwd=cwd,
                         )
                 moved_messages += message_count
         elif message_count == 0:
             action = "would_delete_empty_orphan" if dry_run else "deleted_empty_orphan"
             if not dry_run:
-                delete_folder(plan.archive_folder, cwd=str(cwd) if cwd else None)
+                delete_folder(plan.archive_folder, cwd=cwd)
             deleted_empty_orphans += 1
         else:
             action = "skipped_nonempty_orphan"

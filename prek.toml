@@ -29,5 +29,8 @@ hooks = [
   # the actual package directory and the rules subpackage so it picks up the
   # sources in this repo. Without args, mypy exits with
   # "Missing target module, package, files, or command".
-  { id = "mypy", pass_filenames = false, args = ["src/kontor_cli", "rules"], additional_dependencies = ["types-PyYAML", "types-python-dateutil"] },
+  # click must be installed in the hook venv: under strict mypy an absent
+  # click resolves to Any and every CLI decorator trips
+  # disallow_untyped_decorators.
+  { id = "mypy", pass_filenames = false, args = ["src/kontor_cli", "rules"], additional_dependencies = ["click", "types-PyYAML", "types-python-dateutil"] },
 ]

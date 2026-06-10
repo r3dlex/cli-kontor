@@ -14,6 +14,14 @@ build/
 htmlcov/
 .mypy_cache/
 .ruff_cache/
-.omx/
+.omx/*
+!.omx/plans/
+!.omx/specs/
+!.omx/wiki/
 .antigravitycli/
+.omc/*
+!.omc/plans/
+!.omc/specs/
+!.omc/wiki/
+config.work.yaml
 config.yaml

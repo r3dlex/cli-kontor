@@ -67,7 +67,7 @@ def classify(email: Email) -> str | None:
         if "rib-software.com" in domain:
             # Check for specific project topics
             if "ai" in subject or "estimate" in subject or "incubator" in subject:
-                return "2_Projects/RIB-4.0/AI"
+                return "2_Projects/AI"
             if "jira" in subject or "confluence" in subject:
                 return "9_System"
             if "augment" in subject:

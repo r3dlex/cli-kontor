@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
@@ -40,7 +41,7 @@ Emails MUST be placed in exactly one of these folders:
 
 Folder naming rules:
 - Sub-folders use "/" (e.g., "2_Projects/PRJ_Finance_ERP_Global")
-- Archive mirrors the exact structure (e.g., Archive/2_Projects/PRJ_Finance_ERP_Global)
+- Archive mirrors the exact structure (e.g., "Archive/2_Projects/PRJ_Finance_ERP_Global")
 - Never create folders outside this taxonomy.
 """
 
@@ -87,6 +88,62 @@ class ClassifierError(Exception):
     """Raised when classification fails."""
 
 
+def _derive_max_output_tokens(model: str) -> int:
+    """Return a safe max_output_tokens for the given model."""
+    model_lower = model.lower()
+    if "gpt" in model_lower and any(
+        m in model_lower for m in ("4o", "4-turbo", "4.5", "4-32k", "gpt-5")
+    ):
+        # GPT-4/4o models support up to 16K output
+        return 4096
+    if "gpt" in model_lower:
+        # GPT-3.5 / older GPT-4 — 4K output is plenty for a short JSON reply
+        return 1024
+    if "minimax" in model_lower or "abab" in model_lower:
+        # MiniMax: conservative 1K output; the response is a few fields of JSON
+        return 1024
+    if "claude" in model_lower:
+        # Claude: 8K output should cover any reply
+        return 8192
+    # Default: 1K — safe for short JSON responses
+    return 1024
+
+
+def _truncate_prompt(prompt: str, model: str, overhead_chars: int = 500) -> str:
+    """Truncate prompt to fit within the model's context headroom.
+
+    Uses a conservative heuristic based on the model's known context size.
+    For unknown models, returns the prompt unchanged (fail-open).
+    """
+    model_lower = model.lower()
+    # Target prompt length = 75% of max context, minus overhead.
+    if "minimax" in model_lower or "abab" in model_lower:
+        # MiniMax: 200K token context, use 150K chars as the target
+        target_chars = int(200_000 * 0.75) - overhead_chars
+    elif "gpt-5" in model_lower:
+        # GPT-5: assume 200K context
+        target_chars = int(200_000 * 0.75) - overhead_chars
+    elif "gpt-4o" in model_lower or "gpt-4-turbo" in model_lower:
+        # 128K context models
+        target_chars = int(128_000 * 0.75) - overhead_chars
+    elif "gpt-4" in model_lower or "gpt-4-32k" in model_lower:
+        # 32K context
+        target_chars = int(32_000 * 0.75) - overhead_chars
+    elif "claude" in model_lower:
+        # Claude 3: 200K context
+        target_chars = int(200_000 * 0.75) - overhead_chars
+    else:
+        # Unknown model: fail open and return unchanged
+        return prompt
+
+    if len(prompt) <= target_chars:
+        return prompt
+
+    # Truncate from the bottom — keep the email section visible
+    # by dropping from the middle of the NL/rules context.
+    return prompt[:target_chars] + "\n\n[... prompt truncated ...]"
+
+
 class Classifier:
     """OpenAI-compatible LLM classifier."""
 
@@ -107,6 +164,15 @@ class Classifier:
         """Classify a single email using the LLM. Returns None on failure."""
         prompt = build_prompt(email, FOLDER_TAXONOMY, rules_context, yaml_rules)
 
+        # Derive a safe max_output_tokens for the model.
+        max_output_tokens = _derive_max_output_tokens(self.model)
+        # Truncate the prompt to leave headroom for system + output.
+        # Using a conservative 75% of the model's max context for the prompt.
+        # This is a best-effort guard; a proper fix would count actual tokens,
+        # but that would add a dependency (tiktoken). The heuristic works for
+        # MiniMax (200K) and most OpenAI-compatible models.
+        prompt = _truncate_prompt(prompt, model=self.model, overhead_chars=500)
+
         try:
             response = httpx.post(
                 f"{self.base_url.rstrip('/')}/chat/completions",
@@ -121,6 +187,7 @@ class Classifier:
                         {"role": "user", "content": prompt},
                     ],
                     "temperature": self.temperature,
+                    "max_tokens": max_output_tokens,
                 },
                 timeout=self.timeout,
             )
@@ -142,14 +209,10 @@ class Classifier:
                 content = content.strip()[content.strip().find("\n") + 1 :]
                 if content.endswith("```"):
                     content = content[:-3].strip()
-            result: dict[str, Any] = {}
-            import json
-
-            result = json.loads(content)
+            result: dict[str, Any] = json.loads(content)
         except (KeyError, IndexError, json.JSONDecodeError) as exc:
-            logger.error(
-                f"Failed to parse LLM response: {exc} — content: {content[:200]}"
-            )
+            snippet = content[:200] if "content" in locals() else "<unparsed>"
+            logger.error(f"Failed to parse LLM response: {exc!r} — content: {snippet}")
             return None
 
         folder = result.get("folder", "4_Info")

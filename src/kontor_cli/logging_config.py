@@ -33,7 +33,15 @@ class JSONFormatter(logging.Formatter):
             payload["moves_made"] = record.moves_made
         if hasattr(record, "phase"):
             payload["phase"] = record.phase
-        return json.dumps(payload)
+        return json.dumps(payload) + "\n"
+
+
+class FlushingStreamHandler(logging.StreamHandler[Any]):
+    """StreamHandler that flushes after every emit."""
+
+    def emit(self, record: logging.LogRecord) -> None:
+        super().emit(record)
+        self.flush()
 
 
 def configure_logging(level: str = "INFO", format_type: str = "json") -> None:
@@ -41,11 +49,10 @@ def configure_logging(level: str = "INFO", format_type: str = "json") -> None:
     root = logging.getLogger("kontor_cli")
     root.setLevel(getattr(logging, level.upper(), logging.INFO))
 
-    # Remove existing handlers
     for handler in root.handlers[:]:
         root.removeHandler(handler)
 
-    handler = logging.StreamHandler(sys.stdout)
+    handler = FlushingStreamHandler(sys.stdout)
     if format_type == "json":
         handler.setFormatter(JSONFormatter())
     else:

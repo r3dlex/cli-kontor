@@ -10,6 +10,7 @@ import json
 import subprocess
 from dataclasses import dataclass
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 PAGE_SIZE = 50
@@ -60,7 +61,7 @@ class Email:
         )
 
 
-def _run(args: list[str], cwd: str | None = None) -> str:
+def _run(args: list[str], cwd: str | Path | None = None) -> str:
     """Run himalaya with the given args, return stdout. Raises HimalayaError on failure."""
     try:
         result = subprocess.run(
@@ -81,7 +82,7 @@ def _run(args: list[str], cwd: str | None = None) -> str:
     return result.stdout
 
 
-def list_emails(folder: str = "INBOX", cwd: str | None = None) -> list[Email]:
+def list_emails(folder: str = "INBOX", cwd: str | Path | None = None) -> list[Email]:
     """List all emails in a folder using pagination. Returns list of Email objects."""
     import time
 
@@ -122,18 +123,18 @@ def list_emails(folder: str = "INBOX", cwd: str | None = None) -> list[Email]:
 
 
 def move_email(
-    email_id: str, from_folder: str, to_folder: str, cwd: str | None = None
+    email_id: str, from_folder: str, to_folder: str, cwd: str | Path | None = None
 ) -> None:
     """Move an email from one folder to another using himalaya message move."""
     _run(["message", "move", to_folder, email_id, "-f", from_folder], cwd=cwd)
 
 
-def create_folder(folder_name: str, cwd: str | None = None) -> None:
+def create_folder(folder_name: str, cwd: str | Path | None = None) -> None:
     """Create a new folder."""
     _run(["folder", "add", folder_name], cwd=cwd)
 
 
-def list_folders(cwd: str | None = None) -> list[str]:
+def list_folders(cwd: str | Path | None = None) -> list[str]:
     """List mailbox folders as folder-name strings."""
     output = _run(["folder", "list", "-o", "json"], cwd=cwd)
     try:
@@ -159,12 +160,12 @@ def list_folders(cwd: str | None = None) -> list[str]:
     return names
 
 
-def delete_folder(folder_name: str, cwd: str | None = None) -> None:
+def delete_folder(folder_name: str, cwd: str | Path | None = None) -> None:
     """Delete an empty folder."""
     _run(["folder", "delete", folder_name], cwd=cwd)
 
 
-def delete_email(email_id: str, folder: str, cwd: str | None = None) -> None:
+def delete_email(email_id: str, folder: str, cwd: str | Path | None = None) -> None:
     """Deletion is not supported — raises DeleteNotSupportedError."""
     raise DeleteNotSupportedError(
         "Email deletion is not supported. Emails must be moved to Archive, not deleted."

@@ -8,9 +8,8 @@ import pytest
 
 from kontor_cli.folders import (
     FolderInvariantError,
+    FolderPolicy,
     get_archive_path,
-    get_target_for_email,
-    is_older_than_6months,
     is_valid_folder,
     validate_folder,
 )
@@ -58,47 +57,54 @@ class TestArchivePath:
         )  # no double-wrap
 
 
-class TestIsOlderThan6Months:
-    def test_older_than_6months(self) -> None:
-        old_date = datetime(2020, 1, 1, tzinfo=UTC)
-        assert is_older_than_6months(old_date)
+class TestFolderPolicy:
+    policy = FolderPolicy(archive_age_months=6)
 
-    def test_not_older_than_6months(self) -> None:
-        recent_date = datetime.now(UTC) - timedelta(days=30)
-        assert not is_older_than_6months(recent_date)
-
-    def test_exactly_6months_old(self) -> None:
-        # "Exactly 6 months ago" is ill-defined for relative calculation.
-        # The function uses strictly < threshold. Test that a date clearly
-        # in the past (1 year ago) is flagged as older.
-        from dateutil.relativedelta import relativedelta
-
-        one_year_ago = datetime.now(UTC) - relativedelta(years=1)
-        assert is_older_than_6months(one_year_ago)
-
-
-class TestGetTargetForEmail:
-    def test_classified_folder(self) -> None:
+    def test_recent_classified_email_keeps_its_folder(self) -> None:
         recent = datetime.now(UTC) - timedelta(days=30)
         assert (
-            get_target_for_email(recent, "2_Projects/PRJ_Test", 6)
+            self.policy.target_for(recent, "2_Projects/PRJ_Test")
             == "2_Projects/PRJ_Test"
         )
 
-    def test_no_classification_defaults_to_4_info(self) -> None:
+    def test_unclassified_email_defaults_to_4_info(self) -> None:
         recent = datetime.now(UTC) - timedelta(days=30)
-        assert get_target_for_email(recent, None, 6) == "4_Info"
+        assert self.policy.target_for(recent, None) == "4_Info"
 
-    def test_old_email_goes_to_archive(self) -> None:
+    def test_old_email_is_archive_enforced(self) -> None:
         old = datetime(2020, 1, 1, tzinfo=UTC)
         assert (
-            get_target_for_email(old, "2_Projects/PRJ_Test", 6)
+            self.policy.target_for(old, "2_Projects/PRJ_Test")
             == "Archive/2_Projects/PRJ_Test"
         )
 
-    def test_already_in_archive_stays(self) -> None:
+    def test_email_already_in_archive_stays(self) -> None:
         old = datetime(2020, 1, 1, tzinfo=UTC)
         assert (
-            get_target_for_email(old, "Archive/2_Projects/PRJ_Test", 6)
+            self.policy.target_for(old, "Archive/2_Projects/PRJ_Test")
             == "Archive/2_Projects/PRJ_Test"
         )
+
+    def test_archive_root_itself_stays(self) -> None:
+        old = datetime(2020, 1, 1, tzinfo=UTC)
+        assert self.policy.target_for(old, "Archive") == "Archive"
+
+    def test_old_unclassified_email_is_never_archive_enforced(self) -> None:
+        # Pinned: archive enforcement only applies to classified emails.
+        # An old email without a classification stays in live 4_Info.
+        old = datetime(2020, 1, 1, tzinfo=UTC)
+        assert self.policy.target_for(old, None) == "4_Info"
+
+    def test_archive_age_months_is_configurable(self) -> None:
+        two_months_old = datetime.now(UTC) - timedelta(days=62)
+        assert (
+            FolderPolicy(archive_age_months=1).target_for(two_months_old, "4_Info")
+            == "Archive/4_Info"
+        )
+        assert (
+            FolderPolicy(archive_age_months=6).target_for(two_months_old, "4_Info")
+            == "4_Info"
+        )
+
+    def test_default_archive_age_is_6_months(self) -> None:
+        assert FolderPolicy() == FolderPolicy(archive_age_months=6)
