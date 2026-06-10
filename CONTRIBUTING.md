@@ -3,7 +3,7 @@
 Thanks for considering a contribution.
 
 ## Setup
-1. Clone: `git clone git@github.com:r3dlex/kontor-cli.git && cd kontor-cli`
+1. Clone: `git clone git@github.com:r3dlex/cli-kontor.git && cd cli-kontor`
 2. Install: `uv sync`
 3. Copy `config.example.yaml` to `config.yaml` and fill in your credentials (never commit `config.yaml`).
 4. Install pre-commit: `uvx pre-commit install`
@@ -29,3 +29,8 @@ uv run mypy src/ --strict
 - One PR per logical change.
 - All local CI gates must pass before requesting review.
 - Reference any related issue.
+
+<!-- v3-ai-sdlc-init:start -->
+## v3
+This repo follows the v3 AI-SDLC layout. See `.ai/matrix.json` and `AGENTS.md` for the operating contract. The merge gate requires architect + reviewer + executor agreement.
+<!-- v3-ai-sdlc-init:end -->
