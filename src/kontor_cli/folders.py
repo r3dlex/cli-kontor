@@ -33,8 +33,26 @@ VALID_ROOT_PREFIXES = (
 
 # Valid sub-prefixes by parent
 VALID_SUB_PREFIXES: dict[str, tuple[str, ...]] = {
-    "1_Management": ("MGT_",),
-    "2_Projects": ("PRJ_",),
+    "1_Management": ("MGT_", "AI", "HR", "Leadership", "1on1"),
+    "2_Projects": (
+        "PRJ_",
+        "Augment",
+        "AzureSigning",
+        "BoQ",
+        "Budimex",
+        "China",
+        "Development",
+        "Eiffage",
+        "India",
+        "Internal",
+        "International",
+        "Releases",
+        "Sales",
+        "Security",
+        "Trivium",
+        "Vinci",
+        "Willemen",
+    ),
     "3_External": ("EXT_",),
     "Archive": (
         "0_Action",
@@ -78,8 +96,9 @@ def validate_folder(folder_name: str) -> None:
     if not is_valid_folder(folder_name):
         raise FolderInvariantError(
             f"Invalid folder name: {folder_name!r}. "
-            f"Must follow taxonomy: 0_Action, 1_Management/MGT_*, "
-            f"2_Projects/PRJ_*, 3_External/EXT_*, 4_Info, 9_System, Archive/*"
+            f"Must follow taxonomy or a known live folder: 0_Action, "
+            f"1_Management/MGT_*, 2_Projects/PRJ_*, 3_External/EXT_*, "
+            f"4_Info, 9_System, Archive/*"
         )
 
 

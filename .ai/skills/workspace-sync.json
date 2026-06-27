@@ -1,6 +1,7 @@
 {
   "name": "workspace-sync",
   "version": "1.0.0",
+  "description": "Workspace sync against the upstream repository via the physical-copy strategy. Provides dry-run plan, apply, and drift report; apply is confirmation-gated and never mutates remote state without an explicit human-confirmed run.",
   "operations": ["sync.dry-run", "sync.apply", "drift.report"],
   "requires_confirmation": ["sync.apply"]
 }

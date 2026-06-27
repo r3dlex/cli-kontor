@@ -32,6 +32,10 @@ class TestIsValidFolder:
         assert is_valid_folder("Archive/2_Projects")
         assert is_valid_folder("Archive/0_Action")
 
+    def test_live_exchange_subfolders_without_taxonomy_prefix_are_valid(self) -> None:
+        assert is_valid_folder("1_Management/AI")
+        assert is_valid_folder("2_Projects/Augment")
+
     def test_invalid_folder_prefix(self) -> None:
         assert not is_valid_folder("5_Other")
         assert not is_valid_folder("Random_Folder")

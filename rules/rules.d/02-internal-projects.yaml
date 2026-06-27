@@ -47,24 +47,26 @@
   folder: "2_Projects/Releases"
   priority: 70
 
-# --- PRIORITY 68: AI / Augment / Copilot / Claude / OpenAI ---
+# --- PRIORITY 69: Augment project mail ---
+- from: ".*rib-software\\.com"
+  subject: ".*[Aa]ugment.*"
+  folder: "2_Projects/Augment"
+  priority: 69
+
+# --- PRIORITY 68: AI / Copilot / Claude / OpenAI ---
 - from: ".*rib-software\\.com"
   subject: ".*[Aa]i |[Ee]stimate [Aa]i|AI [Ii]ncubator|AI [Ss]dlc|AI [Gg]uild|a i |[Aa]rtificial [Ii]ntelligence.*|LLM.*|Gen[ ]?AI.*"
-  folder: "2_Projects/AI"
+  folder: "1_Management/AI"
   priority: 68
 - from: ".*rib-software\\.com"
   subject: ".*[Cc]opilot.*|[Cc]laude.*|Anthropic.*|Codex.*|LLM.*|OpenAI.*|GPT.*|o3.*|o4.*"
-  folder: "2_Projects/AI"
-  priority: 68
-- from: ".*rib-software\\.com"
-  subject: ".*[Aa]ugment.*"
-  folder: "2_Projects/AI"
+  folder: "1_Management/AI"
   priority: 68
 
-# --- PRIORITY 66: RIB-4.0-specific AI (merge into AI after transition) ---
+# --- PRIORITY 66: RIB-4.0-specific AI ---
 - from: ".*rib-software\\.com"
   subject: ".*[Rr]ib-4\\.0.*[Aa]i.*|[Rr]ib4.*[Aa]i.*"
-  folder: "2_Projects/AI"
+  folder: "1_Management/AI"
   priority: 66
 
 # --- PRIORITY 65: Sales / BoQ / Estimates / Procurement ---

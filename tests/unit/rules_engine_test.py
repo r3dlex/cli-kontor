@@ -221,15 +221,21 @@ class TestGap2ExternalSaaAtOneOnOne:
 
 
 class TestGap3AiSubjectRoute:
-    """Gap 3: 'augment', 'copilot', 'ai' subjects from rib-software.com should
-    route to 2_Projects/AI, not the stale 2_Projects/RIB-4.0/AI reference."""
+    """Gap 3: AI and Augment subjects from rib-software.com should route
+    only to live Exchange folders so inbox-zero processing can move them."""
 
-    def test_augment_copilot_routes_to_ai(self, tmp_path: Path) -> None:
+    def test_augment_routes_to_live_augment_folder(self, tmp_path: Path) -> None:
         rules = [
             {
                 "from": ".*rib-software\\.com",
-                "subject": ".*[Aa]ugment.*|[Cc]opilot.*|Anthropic.*",
-                "folder": "2_Projects/AI",
+                "subject": ".*[Aa]ugment.*",
+                "folder": "2_Projects/Augment",
+                "priority": 69,
+            },
+            {
+                "from": ".*rib-software\\.com",
+                "subject": ".*[Cc]opilot.*|Anthropic.*|OpenAI.*",
+                "folder": "1_Management/AI",
                 "priority": 68,
             },
         ]
@@ -240,9 +246,57 @@ class TestGap3AiSubjectRoute:
         result = yaml_dsl.evaluate_yaml_rules(
             loaded,
             "mikhail.golyshev@rib-software.com",
-            "RE: Augment Code Invites",
+            "Augment License",
         )
-        assert result == "2_Projects/AI"
+        assert result == "2_Projects/Augment"
+
+    def test_ai_tooling_routes_to_live_management_ai_folder(
+        self, tmp_path: Path
+    ) -> None:
+        rules = [
+            {
+                "from": ".*rib-software\\.com",
+                "subject": ".*[Cc]opilot.*|Anthropic.*|OpenAI.*",
+                "folder": "1_Management/AI",
+                "priority": 68,
+            },
+        ]
+        yaml_file = tmp_path / "rules.yaml"
+        with open(yaml_file, "w") as fh:
+            yaml.safe_dump(rules, fh)
+        loaded = yaml_dsl.load_rules_from_dir(tmp_path)
+        result = yaml_dsl.evaluate_yaml_rules(
+            loaded,
+            "mikhail.golyshev@rib-software.com",
+            "Copilot rollout and OpenAI notes",
+        )
+        assert result == "1_Management/AI"
+
+    def test_repository_rules_route_ai_subjects_to_live_exchange_folders(self) -> None:
+        """Pinned from live mailbox: rules must not target missing 2_Projects/AI."""
+        live_folders = {
+            "1_Management/AI",
+            "2_Projects/Augment",
+            "2_Projects/Internal",
+            "2_Projects/Releases",
+        }
+        rules = yaml_dsl.load_rules_from_dir(Path("rules"))
+
+        augment_result = yaml_dsl.evaluate_yaml_rules(
+            rules,
+            "mangesh.khandave@rib-software.com",
+            "Augment License",
+        )
+        ai_result = yaml_dsl.evaluate_yaml_rules(
+            rules,
+            "mikhail.golyshev@rib-software.com",
+            "Copilot rollout and OpenAI notes",
+        )
+
+        assert augment_result == "2_Projects/Augment"
+        assert ai_result == "1_Management/AI"
+        assert augment_result in live_folders
+        assert ai_result in live_folders
 
 
 class TestGap4SalesRename:
