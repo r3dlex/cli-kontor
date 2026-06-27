@@ -322,3 +322,77 @@ class TestGap4SalesRename:
             "Comittment on CS-3581 BoQ review",
         )
         assert result == "2_Projects/Sales_BoQ_Estimate_Procurement"
+
+
+# ---------------------------------------------------------------------------
+# Regression tests for PR #5 consensus findings.
+# These lock the AI/Augment priority and the Eiffage/Budimex targets against
+# the real ruleset in rules/, plus the rules.py imperative fallback. They
+# FAIL before the PR #5 fixes and PASS after.
+# ---------------------------------------------------------------------------
+
+
+class TestPr5RealRulesetPriority:
+    """The real ruleset must route AI/Augment subjects above the generic
+    priority-76 estimate rule, and route Eiffage/Budimex to their own
+    folders."""
+
+    def test_estimate_ai_routes_to_management_ai_not_internal(self) -> None:
+        rules = yaml_dsl.load_rules_from_dir(Path("rules"))
+        result = yaml_dsl.evaluate_yaml_rules(
+            rules,
+            "mikhail.golyshev@rib-software.com",
+            "estimate ai for RIB-4.0",
+        )
+        assert result == "1_Management/AI"
+
+    def test_plain_estimate_still_routes_to_internal(self) -> None:
+        rules = yaml_dsl.load_rules_from_dir(Path("rules"))
+        result = yaml_dsl.evaluate_yaml_rules(
+            rules,
+            "mikhail.golyshev@rib-software.com",
+            "estimate review for costing",
+        )
+        assert result == "2_Projects/Internal"
+
+    def test_eiffage_routes_to_eiffage(self) -> None:
+        rules = yaml_dsl.load_rules_from_dir(Path("rules"))
+        result = yaml_dsl.evaluate_yaml_rules(
+            rules,
+            "anna.kowalska@rib-software.com",
+            "Eiffage rollout update",
+        )
+        assert result == "2_Projects/Eiffage"
+
+    def test_budimex_routes_to_budimex(self) -> None:
+        rules = yaml_dsl.load_rules_from_dir(Path("rules"))
+        result = yaml_dsl.evaluate_yaml_rules(
+            rules,
+            "anna.kowalska@rib-software.com",
+            "Budimex Ratisbona milestone",
+        )
+        assert result == "2_Projects/Budimex"
+
+
+class TestPr5PythonClassifyFallback:
+    """The rules.py imperative fallback must match 'ai' on a word boundary
+    (not substrings like 'maintenance'), keep augment before ai, and not
+    misfire on bare 'estimate'."""
+
+    def _classify(self, subject: str) -> str | None:
+        ns = python_rules.load_python_rules(Path("rules/rules.py"))
+        return python_rules.call_python_rules(
+            ns, _email(from_addr="user@rib-software.com", subject=subject)
+        )
+
+    def test_augment_and_ai_routes_to_augment(self) -> None:
+        assert self._classify("Augment AI rollout") == "2_Projects/Augment"
+
+    def test_ai_guild_routes_to_management_ai(self) -> None:
+        assert self._classify("AI Guild kickoff") == "1_Management/AI"
+
+    def test_maintenance_window_does_not_route_to_ai(self) -> None:
+        assert self._classify("Maintenance window scheduled") != "1_Management/AI"
+
+    def test_customer_complaint_does_not_route_to_ai(self) -> None:
+        assert self._classify("Customer complaint follow-up") != "1_Management/AI"

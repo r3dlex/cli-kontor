@@ -48,6 +48,7 @@ VALID_SUB_PREFIXES: dict[str, tuple[str, ...]] = {
         "International",
         "Releases",
         "Sales",
+        "Sales_BoQ_Estimate_Procurement",
         "Security",
         "Trivium",
         "Vinci",
@@ -82,10 +83,18 @@ def is_valid_folder(folder_name: str) -> bool:
     if not root_valid:
         return False
 
-    # Check sub-folder prefixes
+    # Check sub-folder names. Entries ending in "_" are treated as prefixes
+    # (e.g. "MGT_" matches "MGT_HR"); all other entries are exact-match only
+    # (e.g. "AI" must not match "AIrport"). Under Archive the child is itself a
+    # nested taxonomy path (e.g. "2_Projects/PRJ_Test"), so match its first
+    # segment exactly against the known taxonomy roots.
     if child:
         valid_subs = VALID_SUB_PREFIXES.get(parent, ())
-        child_valid: bool = any(child.startswith(s) for s in valid_subs)
+        match_target = child.split("/", 1)[0] if parent == ARCHIVE_ROOT else child
+        child_valid: bool = any(
+            match_target.startswith(s) if s.endswith("_") else match_target == s
+            for s in valid_subs
+        )
         if not child_valid:
             return False
     return True
@@ -95,10 +104,10 @@ def validate_folder(folder_name: str) -> None:
     """Raise FolderInvariantError if folder_name violates taxonomy."""
     if not is_valid_folder(folder_name):
         raise FolderInvariantError(
-            f"Invalid folder name: {folder_name!r}. "
-            f"Must follow taxonomy or a known live folder: 0_Action, "
-            f"1_Management/MGT_*, 2_Projects/PRJ_*, 3_External/EXT_*, "
-            f"4_Info, 9_System, Archive/*"
+            f"Invalid folder name: {folder_name!r}. Must follow the taxonomy "
+            f"(e.g. 1_Management/MGT_*, 2_Projects/PRJ_*, 3_External/EXT_*, "
+            f"0_Action, 4_Info, 9_System, Archive/*) or be one of the known "
+            f"live folder names (e.g. 1_Management/AI, 2_Projects/Augment)."
         )
 
 

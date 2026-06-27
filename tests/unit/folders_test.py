@@ -42,6 +42,17 @@ class TestIsValidFolder:
         assert not is_valid_folder("")
         assert not is_valid_folder(".hidden")
 
+    def test_bare_subfolder_names_require_exact_match(self) -> None:
+        # PR #5: bare names like AI/HR/Security must not match by prefix.
+        assert not is_valid_folder("1_Management/HRelocation")
+        assert not is_valid_folder("2_Projects/SecurityBreach")
+        assert not is_valid_folder("1_Management/AIrport")
+
+    def test_legit_bare_subfolders_remain_valid(self) -> None:
+        assert is_valid_folder("1_Management/AI")
+        assert is_valid_folder("2_Projects/Augment")
+        assert is_valid_folder("2_Projects/Eiffage")
+
 
 class TestValidateFolder:
     def test_validate_valid(self) -> None:

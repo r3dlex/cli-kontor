@@ -32,13 +32,13 @@
 # --- PRIORITY 73: Customer Eiffage (archive if old) ---
 - from: ".*rib-software\\.com"
   subject: ".*[Ee]iffage.*"
-  folder: "2_Projects/Vinci"
+  folder: "2_Projects/Eiffage"
   priority: 73
 
 # --- PRIORITY 72: Customer Budimex ---
 - from: ".*rib-software\\.com"
   subject: ".*[Rr]atisbona.*|[Bb]udimex.*"
-  folder: "2_Projects/Vinci"
+  folder: "2_Projects/Budimex"
   priority: 72
 
 # --- PRIORITY 70: Release Management ---
@@ -47,27 +47,27 @@
   folder: "2_Projects/Releases"
   priority: 70
 
-# --- PRIORITY 69: Augment project mail ---
+# --- PRIORITY 78: Augment project mail (above generic estimate p76) ---
 - from: ".*rib-software\\.com"
   subject: ".*[Aa]ugment.*"
   folder: "2_Projects/Augment"
-  priority: 69
+  priority: 78
 
-# --- PRIORITY 68: AI / Copilot / Claude / OpenAI ---
+# --- PRIORITY 77: AI / Copilot / Claude / OpenAI (above generic estimate p76) ---
 - from: ".*rib-software\\.com"
   subject: ".*[Aa]i |[Ee]stimate [Aa]i|AI [Ii]ncubator|AI [Ss]dlc|AI [Gg]uild|a i |[Aa]rtificial [Ii]ntelligence.*|LLM.*|Gen[ ]?AI.*"
   folder: "1_Management/AI"
-  priority: 68
+  priority: 77
 - from: ".*rib-software\\.com"
   subject: ".*[Cc]opilot.*|[Cc]laude.*|Anthropic.*|Codex.*|LLM.*|OpenAI.*|GPT.*|o3.*|o4.*"
   folder: "1_Management/AI"
-  priority: 68
+  priority: 77
 
-# --- PRIORITY 66: RIB-4.0-specific AI ---
+# --- PRIORITY 77: RIB-4.0-specific AI (above generic estimate p76) ---
 - from: ".*rib-software\\.com"
   subject: ".*[Rr]ib-4\\.0.*[Aa]i.*|[Rr]ib4.*[Aa]i.*"
   folder: "1_Management/AI"
-  priority: 66
+  priority: 77
 
 # --- PRIORITY 65: Sales / BoQ / Estimates / Procurement ---
 - from: ".*rib-software\\.com"
