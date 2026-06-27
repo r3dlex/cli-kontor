@@ -1,6 +1,7 @@
 {
   "name": "git-ops",
   "version": "1.0.0",
+  "description": "Local git operations for this workspace — create/checkout branches, create commits, push, and open a draft PR. Push and PR-open are confirmation-gated; the agent must wait for explicit human approval before invoking them.",
   "operations": ["branch.create", "branch.checkout", "commit.create", "push.upload", "pr.open-draft"],
   "requires_confirmation": ["push.upload", "pr.open-draft"]
 }

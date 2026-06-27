@@ -32,11 +32,26 @@ class TestIsValidFolder:
         assert is_valid_folder("Archive/2_Projects")
         assert is_valid_folder("Archive/0_Action")
 
+    def test_live_exchange_subfolders_without_taxonomy_prefix_are_valid(self) -> None:
+        assert is_valid_folder("1_Management/AI")
+        assert is_valid_folder("2_Projects/Augment")
+
     def test_invalid_folder_prefix(self) -> None:
         assert not is_valid_folder("5_Other")
         assert not is_valid_folder("Random_Folder")
         assert not is_valid_folder("")
         assert not is_valid_folder(".hidden")
+
+    def test_bare_subfolder_names_require_exact_match(self) -> None:
+        # PR #5: bare names like AI/HR/Security must not match by prefix.
+        assert not is_valid_folder("1_Management/HRelocation")
+        assert not is_valid_folder("2_Projects/SecurityBreach")
+        assert not is_valid_folder("1_Management/AIrport")
+
+    def test_legit_bare_subfolders_remain_valid(self) -> None:
+        assert is_valid_folder("1_Management/AI")
+        assert is_valid_folder("2_Projects/Augment")
+        assert is_valid_folder("2_Projects/Eiffage")
 
 
 class TestValidateFolder:

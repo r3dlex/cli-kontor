@@ -25,3 +25,8 @@ htmlcov/
 !.omc/wiki/
 config.work.yaml
 config.yaml
+
+# OMC runtime state placed under non-root paths (e.g. src/**/.omc/).
+# The top-level .omc/* rule above covers the root; this catches nested
+# occurrences so session/throttle JSON does not leak into the source tree.
+src/**/.omc/

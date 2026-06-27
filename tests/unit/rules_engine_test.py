@@ -221,15 +221,21 @@ class TestGap2ExternalSaaAtOneOnOne:
 
 
 class TestGap3AiSubjectRoute:
-    """Gap 3: 'augment', 'copilot', 'ai' subjects from rib-software.com should
-    route to 2_Projects/AI, not the stale 2_Projects/RIB-4.0/AI reference."""
+    """Gap 3: AI and Augment subjects from rib-software.com should route
+    only to live Exchange folders so inbox-zero processing can move them."""
 
-    def test_augment_copilot_routes_to_ai(self, tmp_path: Path) -> None:
+    def test_augment_routes_to_live_augment_folder(self, tmp_path: Path) -> None:
         rules = [
             {
                 "from": ".*rib-software\\.com",
-                "subject": ".*[Aa]ugment.*|[Cc]opilot.*|Anthropic.*",
-                "folder": "2_Projects/AI",
+                "subject": ".*[Aa]ugment.*",
+                "folder": "2_Projects/Augment",
+                "priority": 69,
+            },
+            {
+                "from": ".*rib-software\\.com",
+                "subject": ".*[Cc]opilot.*|Anthropic.*|OpenAI.*",
+                "folder": "1_Management/AI",
                 "priority": 68,
             },
         ]
@@ -240,9 +246,57 @@ class TestGap3AiSubjectRoute:
         result = yaml_dsl.evaluate_yaml_rules(
             loaded,
             "mikhail.golyshev@rib-software.com",
-            "RE: Augment Code Invites",
+            "Augment License",
         )
-        assert result == "2_Projects/AI"
+        assert result == "2_Projects/Augment"
+
+    def test_ai_tooling_routes_to_live_management_ai_folder(
+        self, tmp_path: Path
+    ) -> None:
+        rules = [
+            {
+                "from": ".*rib-software\\.com",
+                "subject": ".*[Cc]opilot.*|Anthropic.*|OpenAI.*",
+                "folder": "1_Management/AI",
+                "priority": 68,
+            },
+        ]
+        yaml_file = tmp_path / "rules.yaml"
+        with open(yaml_file, "w") as fh:
+            yaml.safe_dump(rules, fh)
+        loaded = yaml_dsl.load_rules_from_dir(tmp_path)
+        result = yaml_dsl.evaluate_yaml_rules(
+            loaded,
+            "mikhail.golyshev@rib-software.com",
+            "Copilot rollout and OpenAI notes",
+        )
+        assert result == "1_Management/AI"
+
+    def test_repository_rules_route_ai_subjects_to_live_exchange_folders(self) -> None:
+        """Pinned from live mailbox: rules must not target missing 2_Projects/AI."""
+        live_folders = {
+            "1_Management/AI",
+            "2_Projects/Augment",
+            "2_Projects/Internal",
+            "2_Projects/Releases",
+        }
+        rules = yaml_dsl.load_rules_from_dir(Path("rules"))
+
+        augment_result = yaml_dsl.evaluate_yaml_rules(
+            rules,
+            "mangesh.khandave@rib-software.com",
+            "Augment License",
+        )
+        ai_result = yaml_dsl.evaluate_yaml_rules(
+            rules,
+            "mikhail.golyshev@rib-software.com",
+            "Copilot rollout and OpenAI notes",
+        )
+
+        assert augment_result == "2_Projects/Augment"
+        assert ai_result == "1_Management/AI"
+        assert augment_result in live_folders
+        assert ai_result in live_folders
 
 
 class TestGap4SalesRename:
@@ -268,3 +322,77 @@ class TestGap4SalesRename:
             "Comittment on CS-3581 BoQ review",
         )
         assert result == "2_Projects/Sales_BoQ_Estimate_Procurement"
+
+
+# ---------------------------------------------------------------------------
+# Regression tests for PR #5 consensus findings.
+# These lock the AI/Augment priority and the Eiffage/Budimex targets against
+# the real ruleset in rules/, plus the rules.py imperative fallback. They
+# FAIL before the PR #5 fixes and PASS after.
+# ---------------------------------------------------------------------------
+
+
+class TestPr5RealRulesetPriority:
+    """The real ruleset must route AI/Augment subjects above the generic
+    priority-76 estimate rule, and route Eiffage/Budimex to their own
+    folders."""
+
+    def test_estimate_ai_routes_to_management_ai_not_internal(self) -> None:
+        rules = yaml_dsl.load_rules_from_dir(Path("rules"))
+        result = yaml_dsl.evaluate_yaml_rules(
+            rules,
+            "mikhail.golyshev@rib-software.com",
+            "estimate ai for RIB-4.0",
+        )
+        assert result == "1_Management/AI"
+
+    def test_plain_estimate_still_routes_to_internal(self) -> None:
+        rules = yaml_dsl.load_rules_from_dir(Path("rules"))
+        result = yaml_dsl.evaluate_yaml_rules(
+            rules,
+            "mikhail.golyshev@rib-software.com",
+            "estimate review for costing",
+        )
+        assert result == "2_Projects/Internal"
+
+    def test_eiffage_routes_to_eiffage(self) -> None:
+        rules = yaml_dsl.load_rules_from_dir(Path("rules"))
+        result = yaml_dsl.evaluate_yaml_rules(
+            rules,
+            "anna.kowalska@rib-software.com",
+            "Eiffage rollout update",
+        )
+        assert result == "2_Projects/Eiffage"
+
+    def test_budimex_routes_to_budimex(self) -> None:
+        rules = yaml_dsl.load_rules_from_dir(Path("rules"))
+        result = yaml_dsl.evaluate_yaml_rules(
+            rules,
+            "anna.kowalska@rib-software.com",
+            "Budimex Ratisbona milestone",
+        )
+        assert result == "2_Projects/Budimex"
+
+
+class TestPr5PythonClassifyFallback:
+    """The rules.py imperative fallback must match 'ai' on a word boundary
+    (not substrings like 'maintenance'), keep augment before ai, and not
+    misfire on bare 'estimate'."""
+
+    def _classify(self, subject: str) -> str | None:
+        ns = python_rules.load_python_rules(Path("rules/rules.py"))
+        return python_rules.call_python_rules(
+            ns, _email(from_addr="user@rib-software.com", subject=subject)
+        )
+
+    def test_augment_and_ai_routes_to_augment(self) -> None:
+        assert self._classify("Augment AI rollout") == "2_Projects/Augment"
+
+    def test_ai_guild_routes_to_management_ai(self) -> None:
+        assert self._classify("AI Guild kickoff") == "1_Management/AI"
+
+    def test_maintenance_window_does_not_route_to_ai(self) -> None:
+        assert self._classify("Maintenance window scheduled") != "1_Management/AI"
+
+    def test_customer_complaint_does_not_route_to_ai(self) -> None:
+        assert self._classify("Customer complaint follow-up") != "1_Management/AI"

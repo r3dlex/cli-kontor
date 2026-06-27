@@ -32,13 +32,13 @@
 # --- PRIORITY 73: Customer Eiffage (archive if old) ---
 - from: ".*rib-software\\.com"
   subject: ".*[Ee]iffage.*"
-  folder: "2_Projects/Vinci"
+  folder: "2_Projects/Eiffage"
   priority: 73
 
 # --- PRIORITY 72: Customer Budimex ---
 - from: ".*rib-software\\.com"
   subject: ".*[Rr]atisbona.*|[Bb]udimex.*"
-  folder: "2_Projects/Vinci"
+  folder: "2_Projects/Budimex"
   priority: 72
 
 # --- PRIORITY 70: Release Management ---
@@ -47,25 +47,27 @@
   folder: "2_Projects/Releases"
   priority: 70
 
-# --- PRIORITY 68: AI / Augment / Copilot / Claude / OpenAI ---
-- from: ".*rib-software\\.com"
-  subject: ".*[Aa]i |[Ee]stimate [Aa]i|AI [Ii]ncubator|AI [Ss]dlc|AI [Gg]uild|a i |[Aa]rtificial [Ii]ntelligence.*|LLM.*|Gen[ ]?AI.*"
-  folder: "2_Projects/AI"
-  priority: 68
-- from: ".*rib-software\\.com"
-  subject: ".*[Cc]opilot.*|[Cc]laude.*|Anthropic.*|Codex.*|LLM.*|OpenAI.*|GPT.*|o3.*|o4.*"
-  folder: "2_Projects/AI"
-  priority: 68
+# --- PRIORITY 78: Augment project mail (above generic estimate p76) ---
 - from: ".*rib-software\\.com"
   subject: ".*[Aa]ugment.*"
-  folder: "2_Projects/AI"
-  priority: 68
+  folder: "2_Projects/Augment"
+  priority: 78
 
-# --- PRIORITY 66: RIB-4.0-specific AI (merge into AI after transition) ---
+# --- PRIORITY 77: AI / Copilot / Claude / OpenAI (above generic estimate p76) ---
+- from: ".*rib-software\\.com"
+  subject: ".*[Aa]i |[Ee]stimate [Aa]i|AI [Ii]ncubator|AI [Ss]dlc|AI [Gg]uild|a i |[Aa]rtificial [Ii]ntelligence.*|LLM.*|Gen[ ]?AI.*"
+  folder: "1_Management/AI"
+  priority: 77
+- from: ".*rib-software\\.com"
+  subject: ".*[Cc]opilot.*|[Cc]laude.*|Anthropic.*|Codex.*|LLM.*|OpenAI.*|GPT.*|o3.*|o4.*"
+  folder: "1_Management/AI"
+  priority: 77
+
+# --- PRIORITY 77: RIB-4.0-specific AI (above generic estimate p76) ---
 - from: ".*rib-software\\.com"
   subject: ".*[Rr]ib-4\\.0.*[Aa]i.*|[Rr]ib4.*[Aa]i.*"
-  folder: "2_Projects/AI"
-  priority: 66
+  folder: "1_Management/AI"
+  priority: 77
 
 # --- PRIORITY 65: Sales / BoQ / Estimates / Procurement ---
 - from: ".*rib-software\\.com"

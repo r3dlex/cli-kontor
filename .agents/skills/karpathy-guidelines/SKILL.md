@@ -1,3 +1,8 @@
+---
+name: karpathy-guidelines
+description: Baseline software-engineering guidelines for agents working in this repository — think before coding, simplicity first, surgical changes, goal-driven execution. Load as the operating contract for any non-trivial change.
+---
+
 # Karpathy Software Engineering Guidelines
 
 All agents operating in this repository load this file as a baseline.

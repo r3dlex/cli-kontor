@@ -5,7 +5,7 @@ Should return a folder path or None to pass through to NL/LLM.
 
 from __future__ import annotations
 
-import re  # noqa: F401
+import re
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -66,12 +66,12 @@ def classify(email: Email) -> str | None:
         # For rib-software.com, try subject-based classification
         if "rib-software.com" in domain:
             # Check for specific project topics
-            if "ai" in subject or "estimate" in subject or "incubator" in subject:
-                return "2_Projects/AI"
-            if "jira" in subject or "confluence" in subject:
-                return "9_System"
             if "augment" in subject:
                 return "2_Projects/Augment"
+            if re.search(r"\bai\b", subject) or "incubator" in subject:
+                return "1_Management/AI"
+            if "jira" in subject or "confluence" in subject:
+                return "9_System"
             if "release" in subject or "thermometer" in subject:
                 return "2_Projects/Releases"
             if any(w in subject for w in ["willemen", "hypercare", "escalat"]):
