@@ -1,7 +1,14 @@
 {
   "name": "workspace-sync",
-  "version": "1.0.0",
-  "description": "Workspace sync against the upstream repository via the physical-copy strategy. Provides dry-run plan, apply, and drift report; apply is confirmation-gated and never mutates remote state without an explicit human-confirmed run.",
-  "operations": ["sync.dry-run", "sync.apply", "drift.report"],
-  "requires_confirmation": ["sync.apply"]
+  "schema_version": "1.0",
+  "sync_strategy": "physical-copy",
+  "topology": {
+    "current_depth": 0,
+    "max_allowed_depth": 0,
+    "topology_type": "standalone"
+  },
+  "validation": {
+    "reject_canonical_git_submodule": true,
+    "reject_canonical_symlink": true
+  }
 }

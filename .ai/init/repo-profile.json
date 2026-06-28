@@ -1,0 +1,15 @@
+{
+  "application_boundary": null,
+  "default_branch": "main",
+  "generated_at": "2026-06-28T12:54:35Z",
+  "language_pack": "python",
+  "name": "kontor-cli email automation",
+  "remote": "git@github.com:r3dlex/cli-kontor.git",
+  "repo_id": "kontor-cli",
+  "schema_version": "1.0",
+  "topology_type": "standalone",
+  "tracker": {
+    "hosted_policy_mutation": "checklist-only",
+    "type": "github"
+  }
+}

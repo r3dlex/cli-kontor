@@ -1,22 +1,34 @@
 {
-  "schema_version": "1.0",
-  "topology_type": "standalone",
-  "max_allowed_depth": 0,
   "current_depth": 0,
-  "sync_strategy": "physical-copy",
-  "upstream_authority": {
-    "type": "git",
-    "url": "git@github.com:r3dlex/cli-kontor.git",
-    "ref": "main"
-  },
-  "managed_repositories": [],
-  "inherited_assets": [],
+  "inherited_assets": [
+    {
+      "mode": "physical-copy",
+      "path": "AGENTS.md",
+      "source": "."
+    },
+    {
+      "mode": "physical-copy",
+      "path": ".ai/matrix.json",
+      "source": "."
+    },
+    {
+      "mode": "physical-copy",
+      "path": ".ai/workflows/repo-workflow.md",
+      "source": "."
+    }
+  ],
+  "max_allowed_depth": 0,
+  "schema_version": "1.0",
   "sync_status": {
-    "last_synced_at": "2026-06-07T21:00:00Z",
     "drift_detected": false,
-    "last_drift_report": ".ai/drift/last-drift.json"
+    "last_drift_report": ".ai/drift/last-drift.json",
+    "last_synced_at": "2026-06-28T12:54:35Z"
   },
-  "memory": {
-    "external_integration": false
+  "sync_strategy": "physical-copy",
+  "topology_type": "standalone",
+  "upstream_authority": {
+    "ref": "main",
+    "type": "git",
+    "url": "git@github.com:r3dlex/cli-kontor.git"
   }
 }
