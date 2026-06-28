@@ -66,7 +66,6 @@ class Config:
         # Optional triage section
         triage = data.get("triage", {})
         self.triage_enabled: bool = bool(triage.get("enabled", False))
-        self.triage_scan_rebuild: bool = bool(triage.get("scan_rebuild", False))
         self.triage_internal_domain: str = triage.get(
             "internal_domain", "rib-software.com"
         )

@@ -141,6 +141,7 @@ class TestClassify:
         )
 
         mock_cfg = mock.MagicMock(spec=Config)
+        mock_cfg.triage_enabled = True
         mock_cfg.pipeline_archive_months = 6
 
         mock_email = Email(
@@ -220,6 +221,7 @@ class TestProcess:
         )
 
         mock_cfg = mock.MagicMock(spec=Config)
+        mock_cfg.triage_enabled = True
         mock_cfg.pipeline_archive_months = 6
 
         with mock.patch("kontor_cli.cli.Config.load", return_value=mock_cfg):
@@ -380,6 +382,7 @@ class TestTriage:
         from kontor_cli.config import Config
 
         mock_cfg = mock.MagicMock(spec=Config)
+        mock_cfg.triage_enabled = True
         candidate = self._make_candidate()
 
         with mock.patch("kontor_cli.cli.Config.load", return_value=mock_cfg):
@@ -405,6 +408,7 @@ class TestTriage:
         from kontor_cli.config import Config
 
         mock_cfg = mock.MagicMock(spec=Config)
+        mock_cfg.triage_enabled = True
 
         with mock.patch("kontor_cli.cli.Config.load", return_value=mock_cfg):
             with mock.patch("kontor_cli.cli.Triage") as mock_triage_cls:
@@ -473,6 +477,7 @@ class TestTriageCreate:
         from kontor_cli.config import Config
 
         mock_cfg = mock.MagicMock(spec=Config)
+        mock_cfg.triage_enabled = True
         email = self._make_email()
         decision = self._make_decision()
 
@@ -504,6 +509,72 @@ class TestTriageCreate:
         call = instance.create_task_for.call_args
         assert call.kwargs.get("dry_run") is True or call.args[2] is True
 
+    def test_no_dry_run_creates_real_task(self) -> None:
+        from click.testing import CliRunner
+
+        from kontor_cli.cli import cli
+        from kontor_cli.config import Config
+
+        mock_cfg = mock.MagicMock(spec=Config)
+        mock_cfg.triage_enabled = True
+        email = self._make_email()
+        created = self._make_decision()
+        created.outcome = "created"
+
+        with mock.patch("kontor_cli.cli.Config.load", return_value=mock_cfg):
+            with mock.patch("kontor_cli.cli.list_emails", return_value=[email]):
+                with mock.patch("kontor_cli.cli.Triage") as mock_triage_cls:
+                    instance = mock_triage_cls.return_value
+                    instance.create_task_for.return_value = created
+
+                    runner = CliRunner()
+                    result = runner.invoke(
+                        cli,
+                        [
+                            "triage-create",
+                            "--email-id",
+                            "99",
+                            "--category",
+                            "taking_decision",
+                            "--no-dry-run",
+                        ],
+                        catch_exceptions=False,
+                    )
+
+        assert result.exit_code == 0, result.output
+        assert "created" in result.output
+        # the only write path: dry_run must flow through as False
+        call = instance.create_task_for.call_args
+        passed = call.kwargs.get("dry_run")
+        if passed is None:
+            passed = call.args[2]
+        assert passed is False
+
+    def test_triage_disabled_exits_1(self) -> None:
+        from click.testing import CliRunner
+
+        from kontor_cli.cli import cli
+        from kontor_cli.config import Config
+
+        mock_cfg = mock.MagicMock(spec=Config)
+        mock_cfg.triage_enabled = True
+        mock_cfg.triage_enabled = False
+
+        with mock.patch("kontor_cli.cli.Config.load", return_value=mock_cfg):
+            runner = CliRunner()
+            result = runner.invoke(
+                cli,
+                [
+                    "triage-create",
+                    "--email-id",
+                    "99",
+                    "--category",
+                    "taking_decision",
+                ],
+            )
+        assert result.exit_code == 1
+        assert "disabled" in result.output.lower()
+
     def test_invalid_category_rejected_by_click(self) -> None:
         from click.testing import CliRunner
 
@@ -533,6 +604,7 @@ class TestTriageCreate:
         from kontor_cli.config import Config
 
         mock_cfg = mock.MagicMock(spec=Config)
+        mock_cfg.triage_enabled = True
         email = self._make_email()
         decision = self._make_decision()
 
@@ -569,6 +641,7 @@ class TestTriageCreate:
         from kontor_cli.config import Config
 
         mock_cfg = mock.MagicMock(spec=Config)
+        mock_cfg.triage_enabled = True
 
         with mock.patch("kontor_cli.cli.Config.load", return_value=mock_cfg):
             with mock.patch("kontor_cli.cli.list_emails", return_value=[]):

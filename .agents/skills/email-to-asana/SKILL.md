@@ -295,5 +295,5 @@ the email genuinely contains a decision point; do not force it. The fixed
 
 ---
 
-**Version:** 2.0  
+**Version:** 2.0
 **Last updated:** 2026-06-28
