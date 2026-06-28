@@ -1,0 +1,74 @@
+{
+  "edges": [
+    {
+      "created_by": "init-ai-repo",
+      "evidence_path": ".ai/traceability/index.md",
+      "relation": "governed-by",
+      "source": "workflow:kontor-cli:init-ai-repo",
+      "target": "adr:kontor-cli:init-ai-sdlc-v3"
+    },
+    {
+      "created_by": "init-ai-repo",
+      "evidence_path": ".ai/validation/report.md",
+      "relation": "validated-by",
+      "source": "workflow:kontor-cli:init-ai-repo",
+      "target": "validation:kontor-cli:ai-sdlc-structural"
+    },
+    {
+      "created_by": "init-ai-repo",
+      "evidence_path": ".ai/handoff/init-ai-repo-handoff.md",
+      "relation": "summarized-by",
+      "source": "workflow:kontor-cli:init-ai-repo",
+      "target": "handoff:kontor-cli:init-ai-repo"
+    }
+  ],
+  "generated_at": "2026-06-28T12:54:35Z",
+  "nodes": [
+    {
+      "backlinks": [
+        "validation:kontor-cli:ai-sdlc-structural"
+      ],
+      "id": "workflow:kontor-cli:init-ai-repo",
+      "path": ".ai/workflows/repo-workflow.md",
+      "repo_id": "kontor-cli",
+      "status": "active",
+      "title": "init-ai-repo workflow",
+      "type": "workflow"
+    },
+    {
+      "backlinks": [
+        "workflow:kontor-cli:init-ai-repo"
+      ],
+      "id": "adr:kontor-cli:init-ai-sdlc-v3",
+      "path": "docs/architecture/adr/0001-init-ai-sdlc-v3.md",
+      "repo_id": "kontor-cli",
+      "status": "accepted",
+      "title": "Adopt AI-SDLC v3",
+      "type": "adr"
+    },
+    {
+      "backlinks": [
+        "workflow:kontor-cli:init-ai-repo"
+      ],
+      "id": "validation:kontor-cli:ai-sdlc-structural",
+      "path": ".ai/validation/report.md",
+      "repo_id": "kontor-cli",
+      "status": "active",
+      "title": "AI-SDLC structural validation",
+      "type": "validation"
+    },
+    {
+      "backlinks": [
+        "workflow:kontor-cli:init-ai-repo"
+      ],
+      "id": "handoff:kontor-cli:init-ai-repo",
+      "path": ".ai/handoff/init-ai-repo-handoff.md",
+      "repo_id": "kontor-cli",
+      "status": "active",
+      "title": "init-ai-repo handoff",
+      "type": "handoff"
+    }
+  ],
+  "root_repo_id": "kontor-cli",
+  "schema_version": "1.0"
+}

@@ -81,3 +81,9 @@ uv run kontor-cli --help      # CLI reference
 ## AI SDLC v3
 This repo follows the v3 AI-SDLC layout. See `.ai/matrix.json`, `.memory/human-override/`, and `docs/architecture/adr/`. Modules at `r3dlex/skills/ai-sdlc-init/modules/`.
 <!-- v3-ai-sdlc-init:end -->
+
+<!-- ai-sdlc-init:start -->
+## AI-SDLC governance
+
+This repository follows the AI-SDLC methodology. See [AGENTS.md](./AGENTS.md), [RULES.md](./RULES.md), [PLANS.md](./PLANS.md), [.ai/workflows/repo-workflow.md](./.ai/workflows/repo-workflow.md), and [.ai/workflows/repo-workflow.json](./.ai/workflows/repo-workflow.json).
+<!-- ai-sdlc-init:end -->

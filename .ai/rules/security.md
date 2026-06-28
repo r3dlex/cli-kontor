@@ -1,4 +1,5 @@
-# Security Rules (v3)
-- No credentials in this repo.
-- Hosted mutations are confirmation-gated.
-- `.memory/human-override/` is terminal priority.
+# Security rules
+
+- Do not commit credentials, tokens, cookies, or personal secrets.
+- Do not add dependencies without checking the manifest and review checklist.
+- Hosted policy changes require explicit admin confirmation.

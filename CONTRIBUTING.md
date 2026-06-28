@@ -36,3 +36,9 @@ mypy runs in strict mode: `strict = true` is set in `pyproject.toml`.
 ## v3
 This repo follows the v3 AI-SDLC layout. See `.ai/matrix.json` and `AGENTS.md` for the operating contract. The merge gate requires architect + reviewer + executor agreement.
 <!-- v3-ai-sdlc-init:end -->
+
+<!-- ai-sdlc-init:start -->
+## AI-SDLC contribution gate
+
+Run `python3 .ai/bin/validate-ai-sdlc.py` before opening or updating a PR. Merge requires architect, reviewer, and executor agreement, resolved comments, green local validation, and green hosted CI.
+<!-- ai-sdlc-init:end -->
