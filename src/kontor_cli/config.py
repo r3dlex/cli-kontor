@@ -66,7 +66,6 @@ class Config:
         # Optional triage section
         triage = data.get("triage", {})
         self.triage_enabled: bool = bool(triage.get("enabled", False))
-        self.triage_scan_rebuild: bool = bool(triage.get("scan_rebuild", False))
         self.triage_internal_domain: str = triage.get(
             "internal_domain", "rib-software.com"
         )
@@ -74,6 +73,11 @@ class Config:
         self.triage_content_high_threshold: float = float(
             triage.get("content_high_threshold", 0.6)
         )
+        self.triage_exclude_senders: list[str] = triage.get("exclude_senders", [])
+        # The owner whose input/action a task must require. Sender importance
+        # alone never justifies a task — the content must request THIS person's
+        # decision/review/approval/answer.
+        self.triage_owner_email: str = triage.get("owner_email", "")
 
     @classmethod
     def load(cls, path: str | Path | None = None) -> Config:

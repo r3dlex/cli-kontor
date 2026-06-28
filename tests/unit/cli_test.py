@@ -141,6 +141,7 @@ class TestClassify:
         )
 
         mock_cfg = mock.MagicMock(spec=Config)
+        mock_cfg.triage_enabled = True
         mock_cfg.pipeline_archive_months = 6
 
         mock_email = Email(
@@ -219,6 +220,7 @@ class TestProcess:
         )
 
         mock_cfg = mock.MagicMock(spec=Config)
+        mock_cfg.triage_enabled = True
         mock_cfg.pipeline_archive_months = 6
 
         with mock.patch("kontor_cli.cli.Config.load", return_value=mock_cfg):
@@ -343,7 +345,101 @@ class TestClassifyRecommend:
 
 
 class TestTriage:
-    """Tests for the `triage` CLI command."""
+    """Tests for the `triage` candidate-lister CLI command."""
+
+    def _make_candidate(self) -> object:
+        from kontor_cli.triage import TriageCandidate
+
+        return TriageCandidate(
+            email_id="99",
+            from_name="Customer Carol",
+            from_addr="customer@external.com",
+            subject="Urgent: blocker on go-live",
+            body="Please decide before Friday.",
+            reason="external customer sender",
+            decisive_prior=False,
+        )
+
+    def _make_email(self) -> object:
+        from datetime import datetime
+
+        from kontor_cli.himalaya import Email
+
+        return Email(
+            id="99",
+            from_addr="customer@external.com",
+            subject="Urgent: blocker on go-live",
+            date=datetime(2026, 6, 28, 10, 0, 0, tzinfo=UTC),
+            flags={},
+            folder="INBOX",
+        )
+
+    def test_triage_lists_candidates_with_body(self) -> None:
+        from click.testing import CliRunner
+
+        from kontor_cli.cli import cli
+        from kontor_cli.config import Config
+
+        mock_cfg = mock.MagicMock(spec=Config)
+        mock_cfg.triage_enabled = True
+        candidate = self._make_candidate()
+
+        with mock.patch("kontor_cli.cli.Config.load", return_value=mock_cfg):
+            with mock.patch("kontor_cli.cli.Triage") as mock_triage_cls:
+                instance = mock_triage_cls.return_value
+                instance.list_candidates.return_value = [candidate]
+
+                runner = CliRunner()
+                result = runner.invoke(cli, ["triage"], catch_exceptions=False)
+
+        assert result.exit_code == 0, result.output
+        assert "99" in result.output
+        assert "customer@external.com" in result.output
+        assert "Urgent: blocker on go-live" in result.output
+        assert "external customer sender" in result.output
+        assert "Please decide before Friday." in result.output
+        instance.list_candidates.assert_called_once()
+
+    def test_triage_never_calls_asana_write(self) -> None:
+        from click.testing import CliRunner
+
+        from kontor_cli.cli import cli
+        from kontor_cli.config import Config
+
+        mock_cfg = mock.MagicMock(spec=Config)
+        mock_cfg.triage_enabled = True
+
+        with mock.patch("kontor_cli.cli.Config.load", return_value=mock_cfg):
+            with mock.patch("kontor_cli.cli.Triage") as mock_triage_cls:
+                instance = mock_triage_cls.return_value
+                instance.list_candidates.return_value = []
+                with mock.patch(
+                    "kontor_cli.asana_client.AsanaClient.create_task"
+                ) as mock_create:
+                    runner = CliRunner()
+                    result = runner.invoke(cli, ["triage"], catch_exceptions=False)
+                    mock_create.assert_not_called()
+
+        assert result.exit_code == 0, result.output
+
+    def test_triage_config_error_exits_1(self) -> None:
+        from click.testing import CliRunner
+
+        from kontor_cli.cli import cli
+        from kontor_cli.config import ConfigError
+
+        with mock.patch(
+            "kontor_cli.cli.Config.load", side_effect=ConfigError("bad config")
+        ):
+            runner = CliRunner()
+            result = runner.invoke(cli, ["triage"], catch_exceptions=False)
+
+        assert result.exit_code == 1
+        assert "Config error" in result.output
+
+
+class TestTriageCreate:
+    """Tests for the `triage-create` CLI command (agent-driven creation)."""
 
     def _make_email(self) -> object:
         from datetime import datetime
@@ -365,7 +461,7 @@ class TestTriage:
         return TriageDecision(
             email_id="99",
             qualifies=True,
-            reason="external customer sender",
+            reason="agent-supplied",
             category="taking_decision",
             target_date="2026-06-30",
             task_name="[Taking Decision] Urgent: blocker on go-live",
@@ -373,15 +469,14 @@ class TestTriage:
             outcome="preview",
         )
 
-    def test_triage_dry_run_lists_per_email_qualify_reason_category_targetdate_task(
-        self,
-    ) -> None:
+    def test_dry_run_previews_with_no_write(self) -> None:
         from click.testing import CliRunner
 
         from kontor_cli.cli import cli
         from kontor_cli.config import Config
 
         mock_cfg = mock.MagicMock(spec=Config)
+        mock_cfg.triage_enabled = True
         email = self._make_email()
         decision = self._make_decision()
 
@@ -389,77 +484,126 @@ class TestTriage:
             with mock.patch("kontor_cli.cli.list_emails", return_value=[email]):
                 with mock.patch("kontor_cli.cli.Triage") as mock_triage_cls:
                     instance = mock_triage_cls.return_value
-                    instance.maybe_create_task.return_value = decision
+                    instance.create_task_for.return_value = decision
 
                     runner = CliRunner()
                     result = runner.invoke(
-                        cli, ["triage", "--dry-run"], catch_exceptions=False
+                        cli,
+                        [
+                            "triage-create",
+                            "--email-id",
+                            "99",
+                            "--category",
+                            "taking_decision",
+                        ],
+                        catch_exceptions=False,
                     )
 
         assert result.exit_code == 0, result.output
-        assert "99" in result.output
-        assert "taking_decision" in result.output
-        assert "2026-06-30" in result.output
+        assert "preview" in result.output
         assert "[Taking Decision] Urgent: blocker on go-live" in result.output
-        # qualify indicator and reason
-        assert "y" in result.output
-        assert "external customer sender" in result.output
+        assert "2026-06-30" in result.output
+        # default is dry-run
+        instance.create_task_for.assert_called_once()
+        call = instance.create_task_for.call_args
+        assert call.kwargs.get("dry_run") is True or call.args[2] is True
 
-    def test_triage_dry_run_never_calls_asana_write(self) -> None:
+    def test_no_dry_run_creates_real_task(self) -> None:
         from click.testing import CliRunner
 
         from kontor_cli.cli import cli
         from kontor_cli.config import Config
 
         mock_cfg = mock.MagicMock(spec=Config)
+        mock_cfg.triage_enabled = True
         email = self._make_email()
-        decision = self._make_decision()
+        created = self._make_decision()
+        created.outcome = "created"
 
         with mock.patch("kontor_cli.cli.Config.load", return_value=mock_cfg):
             with mock.patch("kontor_cli.cli.list_emails", return_value=[email]):
                 with mock.patch("kontor_cli.cli.Triage") as mock_triage_cls:
                     instance = mock_triage_cls.return_value
-                    instance.maybe_create_task.return_value = decision
+                    instance.create_task_for.return_value = created
 
                     runner = CliRunner()
                     result = runner.invoke(
-                        cli, ["triage", "--dry-run"], catch_exceptions=False
+                        cli,
+                        [
+                            "triage-create",
+                            "--email-id",
+                            "99",
+                            "--category",
+                            "taking_decision",
+                            "--no-dry-run",
+                        ],
+                        catch_exceptions=False,
                     )
 
         assert result.exit_code == 0, result.output
-        # maybe_create_task must be called with dry_run=True
-        instance.maybe_create_task.assert_called_once()
-        call_kwargs = instance.maybe_create_task.call_args
-        assert call_kwargs.kwargs.get("dry_run") is True or call_kwargs.args[2] is True
+        assert "created" in result.output
+        # the only write path: dry_run must flow through as False
+        call = instance.create_task_for.call_args
+        passed = call.kwargs.get("dry_run")
+        if passed is None:
+            passed = call.args[2]
+        assert passed is False
 
-        # AsanaClient.create_task must never be called
-        with mock.patch(
-            "kontor_cli.asana_client.AsanaClient.create_task"
-        ) as mock_create:
-            mock_create.assert_not_called()
+    def test_triage_disabled_exits_1(self) -> None:
+        from click.testing import CliRunner
 
-    def test_triage_no_dry_run_flag_is_rejected(self) -> None:
-        """`--no-dry-run` must NOT exist — the command is preview-only."""
+        from kontor_cli.cli import cli
+        from kontor_cli.config import Config
+
+        mock_cfg = mock.MagicMock(spec=Config)
+        mock_cfg.triage_enabled = True
+        mock_cfg.triage_enabled = False
+
+        with mock.patch("kontor_cli.cli.Config.load", return_value=mock_cfg):
+            runner = CliRunner()
+            result = runner.invoke(
+                cli,
+                [
+                    "triage-create",
+                    "--email-id",
+                    "99",
+                    "--category",
+                    "taking_decision",
+                ],
+            )
+        assert result.exit_code == 1
+        assert "disabled" in result.output.lower()
+
+    def test_invalid_category_rejected_by_click(self) -> None:
         from click.testing import CliRunner
 
         from kontor_cli.cli import cli
 
         runner = CliRunner()
-        result = runner.invoke(cli, ["triage", "--no-dry-run"])
-        # Unknown option → click usage error, exit code 2, no real run.
-        assert result.exit_code == 2
-        assert (
-            "no-dry-run" in result.output or "no such option" in result.output.lower()
+        result = runner.invoke(
+            cli,
+            [
+                "triage-create",
+                "--email-id",
+                "99",
+                "--category",
+                "nonsense",
+            ],
         )
+        # click.Choice rejects → usage error, exit code 2
+        assert result.exit_code == 2
+        assert "nonsense" in result.output or "invalid" in result.output.lower()
 
-    def test_triage_always_calls_maybe_create_task_with_dry_run_true(self) -> None:
-        """Even invoked plainly, maybe_create_task is always dry_run=True."""
+    def test_deadline_parsed_and_passed_through(self) -> None:
+        from datetime import date
+
         from click.testing import CliRunner
 
         from kontor_cli.cli import cli
         from kontor_cli.config import Config
 
         mock_cfg = mock.MagicMock(spec=Config)
+        mock_cfg.triage_enabled = True
         email = self._make_email()
         decision = self._make_decision()
 
@@ -467,17 +611,57 @@ class TestTriage:
             with mock.patch("kontor_cli.cli.list_emails", return_value=[email]):
                 with mock.patch("kontor_cli.cli.Triage") as mock_triage_cls:
                     instance = mock_triage_cls.return_value
-                    instance.maybe_create_task.return_value = decision
+                    instance.create_task_for.return_value = decision
 
                     runner = CliRunner()
-                    result = runner.invoke(cli, ["triage"], catch_exceptions=False)
+                    result = runner.invoke(
+                        cli,
+                        [
+                            "triage-create",
+                            "--email-id",
+                            "99",
+                            "--category",
+                            "nudging",
+                            "--deadline",
+                            "2026-07-15",
+                        ],
+                        catch_exceptions=False,
+                    )
 
         assert result.exit_code == 0, result.output
-        instance.maybe_create_task.assert_called_once()
-        call = instance.maybe_create_task.call_args
-        assert call.kwargs.get("dry_run") is True or call.args[2] is True
+        passed_decision = instance.create_task_for.call_args.args[1]
+        assert passed_decision.category == "nudging"
+        assert passed_decision.deadline == date(2026, 7, 15)
 
-    def test_triage_config_error_exits_1(self) -> None:
+    def test_email_not_found_exits_1(self) -> None:
+        from click.testing import CliRunner
+
+        from kontor_cli.cli import cli
+        from kontor_cli.config import Config
+
+        mock_cfg = mock.MagicMock(spec=Config)
+        mock_cfg.triage_enabled = True
+
+        with mock.patch("kontor_cli.cli.Config.load", return_value=mock_cfg):
+            with mock.patch("kontor_cli.cli.list_emails", return_value=[]):
+                with mock.patch("kontor_cli.cli.Triage"):
+                    runner = CliRunner()
+                    result = runner.invoke(
+                        cli,
+                        [
+                            "triage-create",
+                            "--email-id",
+                            "missing",
+                            "--category",
+                            "nudging",
+                        ],
+                        catch_exceptions=False,
+                    )
+
+        assert result.exit_code == 1
+        assert "not found" in result.output
+
+    def test_config_error_exits_1(self) -> None:
         from click.testing import CliRunner
 
         from kontor_cli.cli import cli
@@ -487,7 +671,17 @@ class TestTriage:
             "kontor_cli.cli.Config.load", side_effect=ConfigError("bad config")
         ):
             runner = CliRunner()
-            result = runner.invoke(cli, ["triage"], catch_exceptions=False)
+            result = runner.invoke(
+                cli,
+                [
+                    "triage-create",
+                    "--email-id",
+                    "99",
+                    "--category",
+                    "nudging",
+                ],
+                catch_exceptions=False,
+            )
 
         assert result.exit_code == 1
         assert "Config error" in result.output
