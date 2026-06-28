@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-import json
 import logging
-from datetime import datetime
+from datetime import date, datetime
 from unittest import mock
 
 import pytest
@@ -16,6 +15,7 @@ from kontor_cli.triage import (
     CATEGORY_TEMPLATES,
     CategoryDecision,
     Triage,
+    TriageCandidate,
     TriageDecision,
 )
 
@@ -34,16 +34,13 @@ def _make_config() -> Config:
     }
     cfg.triage_internal_domain = INTERNAL
     cfg.triage_content_high_threshold = 0.6
+    cfg.triage_exclude_senders = []
+    cfg.triage_owner_email = "owner@rib-software.com"
     cfg.triage_sender_tiers = {
         "extremely_important": ["ceo@rib-software.com", "Big Boss"],
         "very_important": ["vp@rib-software.com", "Decisive Dan"],
         "also_important": ["lead@rib-software.com"],
     }
-    cfg.llm_base_url = "https://llm.test/v1"
-    cfg.llm_api_key = "sk-test"
-    cfg.llm_model = "test-model"
-    cfg.llm_temperature = 0.0
-    cfg.llm_timeout = 30
     return cfg
 
 
@@ -68,16 +65,6 @@ def _make_email(
 
 def _make_triage(cfg: Config | None = None) -> Triage:
     return Triage(cfg or _make_config())
-
-
-def _llm_response(category: str, deadline: object, rationale: str = "r") -> mock.Mock:
-    payload = {"category": category, "deadline": deadline, "rationale": rationale}
-    result = mock.MagicMock()
-    result.json.return_value = {
-        "choices": [{"message": {"content": json.dumps(payload)}}]
-    }
-    result.raise_for_status = mock.MagicMock()
-    return result
 
 
 # --------------------------------------------------------------------------- #
@@ -118,9 +105,22 @@ class TestScoringGate:
     def test_external_domain_boosted(self) -> None:
         t = _make_triage()
         email = _make_email(from_addr="client@customer.com")
-        score = t.evaluate(email, "hi")
+        # Real customer with content signal qualifies and is flagged a customer.
+        score = t.evaluate(email, "please approve the contract")
         assert score.qualifies
         assert score.customer_boost is True
+        # Bare external sender with no content signal does not qualify.
+        assert not t.evaluate(email, "hi").qualifies
+
+    def test_automated_external_sender_excluded(self) -> None:
+        t = _make_triage()
+        # Notification/automated senders never qualify, even with signal words.
+        noreply = _make_email(
+            from_addr="no-reply@teams.mail.microsoft", from_name="Teams"
+        )
+        score = t.evaluate(noreply, "urgent: please approve this escalation now")
+        assert not score.qualifies
+        assert t.is_excluded(noreply) is True
 
     def test_internal_domain_not_auto_boosted(self) -> None:
         t = _make_triage()
@@ -146,8 +146,12 @@ class TestScoringGate:
 
     def test_qualifies_when_listed_OR_customer_OR_high_content(self) -> None:  # noqa: N802
         t = _make_triage()
-        # customer alone
-        assert t.evaluate(_make_email(from_addr="a@customer.com"), "").qualifies
+        # real customer WITH content signal qualifies
+        assert t.evaluate(
+            _make_email(from_addr="a@customer.com"), "please approve this"
+        ).qualifies
+        # bare external customer with NO content signal no longer qualifies
+        assert not t.evaluate(_make_email(from_addr="a@customer.com"), "").qualifies
         # listed + content
         assert t.evaluate(
             _make_email(from_addr="ceo@rib-software.com"), "please approve"
@@ -239,82 +243,127 @@ class TestFetchSelector:
 
 
 # --------------------------------------------------------------------------- #
-# Step 6 — LLM judgment + date
+# Candidate surfacing — what the agent consumes to classify
 # --------------------------------------------------------------------------- #
-class TestLLMJudgment:
-    def test_llm_assigns_exactly_one_of_4_categories(self) -> None:
+class TestListCandidates:
+    def test_only_qualifying_emails_returned_with_body(self) -> None:
+        cfg = _make_config()
+        cfg.triage_internal_domain = "example.com"
+        t = _make_triage(cfg)
+        qualifying = _make_email(
+            email_id="1", from_addr="ceo@rib-software.com", subject="please approve"
+        )
+        skipped = _make_email(
+            email_id="2", from_addr="rand@example.com", subject="lunch"
+        )
+        with (
+            mock.patch(
+                "kontor_cli.triage.list_emails", return_value=[qualifying, skipped]
+            ),
+            mock.patch(
+                "kontor_cli.triage.read_message_body", return_value="please decide"
+            ),
+        ):
+            candidates = t.list_candidates("INBOX")
+        assert len(candidates) == 1
+        c = candidates[0]
+        assert isinstance(c, TriageCandidate)
+        assert c.email_id == "1"
+        assert c.body == "please decide"
+        assert c.reason
+
+    def test_body_fetch_error_skips_email_gracefully(self) -> None:
         t = _make_triage()
-        email = _make_email()
-        with mock.patch("httpx.post", return_value=_llm_response("nudging", None)):
-            decision = t.judge_category(email, "body", decisive_prior=False)
-        assert decision is not None
-        assert decision.category == "nudging"
-        assert decision.category in CATEGORY_TEMPLATES
+        email = _make_email(email_id="7", from_addr="ceo@rib-software.com")
 
-    def test_decisive_prior_biases_toward_taking_decision(self) -> None:
+        def boom(*_a: object, **_k: object) -> str:
+            raise RuntimeError("fetch failed")
+
+        with (
+            mock.patch("kontor_cli.triage.list_emails", return_value=[email]),
+            mock.patch("kontor_cli.triage.read_message_body", side_effect=boom),
+        ):
+            candidates = t.list_candidates("INBOX")
+        assert candidates == []
+
+    def test_decisive_prior_surfaced_on_candidate(self) -> None:
         t = _make_triage()
-        email = _make_email()
-        with mock.patch(
-            "httpx.post", return_value=_llm_response("taking_decision", None)
-        ) as post:
-            t.judge_category(email, "body", decisive_prior=True)
-        sent = post.call_args.kwargs["json"]["messages"][0]["content"]
-        assert "taking_decision" in sent
-        assert "decisive" in sent.lower()
+        email = _make_email(from_addr="vp@rib-software.com", subject="please decide")
+        with (
+            mock.patch("kontor_cli.triage.list_emails", return_value=[email]),
+            mock.patch(
+                "kontor_cli.triage.read_message_body", return_value="urgent decision"
+            ),
+        ):
+            candidates = t.list_candidates("INBOX")
+        assert len(candidates) == 1
+        assert candidates[0].decisive_prior is True
 
-    def test_llm_failure_returns_none(self) -> None:
-        import httpx
-
+    def test_canonical_folder_surfaced_on_candidate(self) -> None:
         t = _make_triage()
-        with mock.patch("httpx.post", side_effect=httpx.RequestError("boom")):
-            assert t.judge_category(_make_email(), "b", False) is None
+        # Inject a stub pipeline so the candidate carries the canonical
+        # taxonomy folder as context for the agent's category judgment.
+        t._pipeline_init = True
+        t._pipeline = mock.MagicMock()
+        t._pipeline.classify_with_rules.return_value = "2_Projects/PRJ_Willemen"
+        email = _make_email(from_addr="vp@rib-software.com", subject="please decide")
+        with (
+            mock.patch("kontor_cli.triage.list_emails", return_value=[email]),
+            mock.patch(
+                "kontor_cli.triage.read_message_body", return_value="urgent decision"
+            ),
+        ):
+            candidates = t.list_candidates("INBOX")
+        assert len(candidates) == 1
+        assert candidates[0].canonical_folder == "2_Projects/PRJ_Willemen"
 
-    def test_llm_invalid_json_returns_none(self) -> None:
+    def test_canonical_folder_none_when_rules_unavailable(self) -> None:
         t = _make_triage()
-        bad = mock.MagicMock()
-        bad.json.return_value = {"choices": [{"message": {"content": "not json"}}]}
-        bad.raise_for_status = mock.MagicMock()
-        with mock.patch("httpx.post", return_value=bad):
-            assert t.judge_category(_make_email(), "b", False) is None
+        # Unavailable rule pipeline → canonical hint is best-effort, stays None.
+        t._pipeline_init = True
+        t._pipeline = None
+        email = _make_email(from_addr="vp@rib-software.com", subject="please decide")
+        with (
+            mock.patch("kontor_cli.triage.list_emails", return_value=[email]),
+            mock.patch(
+                "kontor_cli.triage.read_message_body", return_value="urgent decision"
+            ),
+        ):
+            candidates = t.list_candidates("INBOX")
+        assert candidates[0].canonical_folder is None
 
-    def test_llm_category_not_in_4_returns_none(self) -> None:
+    def test_canonical_folder_uses_inline_pipeline_classifier(self) -> None:
         t = _make_triage()
-        with mock.patch("httpx.post", return_value=_llm_response("nonsense", None)):
-            assert t.judge_category(_make_email(), "b", False) is None
+        email = _make_email(from_addr="vp@rib-software.com")
+        pipeline = mock.MagicMock()
+        pipeline.classify_with_rules.return_value = "2_Projects/PRJ_Willemen"
 
-    def test_date_llm_absolute_deadline_used(self) -> None:
+        with mock.patch("kontor_cli.pipeline.Pipeline", return_value=pipeline) as cls:
+            assert t._canonical_folder(email) == "2_Projects/PRJ_Willemen"
+
+        cls.assert_called_once_with(t.config, t.cwd)
+        pipeline.classify_with_rules.assert_called_once_with(email)
+
+
+# --------------------------------------------------------------------------- #
+# Date resolution
+# --------------------------------------------------------------------------- #
+class TestDateResolution:
+    def test_absolute_deadline_used(self) -> None:
         t = _make_triage()
         email = _make_email(date=datetime(2026, 6, 28))
-        with mock.patch(
-            "httpx.post", return_value=_llm_response("nudging", "2026-07-15")
-        ):
-            decision = t.judge_category(email, "b", False)
-        assert decision is not None
+        decision = CategoryDecision(
+            category="nudging", deadline=date(2026, 7, 15), rationale="r"
+        )
         assert t.resolve_target_date(decision, email) == "2026-07-15"
 
-    def test_date_no_deadline_falls_back_to_email_date(self) -> None:
+    def test_no_deadline_falls_back_to_email_date(self) -> None:
         t = _make_triage()
         email = _make_email(date=datetime(2026, 6, 28, 14, 0))
         decision = CategoryDecision(category="nudging", deadline=None, rationale="r")
         assert t.resolve_target_date(decision, email) == "2026-06-28"
 
-    def test_date_relative_phrase_parsed_via_dateutil_anchored_on_email_date(
-        self,
-    ) -> None:
-        t = _make_triage()
-        # email dated Sunday 2026-06-28; "Friday" anchored on that date.
-        email = _make_email(date=datetime(2026, 6, 28))
-        with mock.patch(
-            "httpx.post", return_value=_llm_response("taking_decision", "Friday")
-        ):
-            decision = t.judge_category(email, "b", False)
-        assert decision is not None
-        assert decision.deadline is not None
-        # dateutil resolves "Friday" anchored on 2026-06-28 → 2026-07-03.
-        resolved = t.resolve_target_date(decision, email)
-        assert resolved == "2026-07-03"
-
-    def test_date_unparseable_or_missing_email_date_raises(self) -> None:
+    def test_unparseable_or_missing_email_date_raises(self) -> None:
         t = _make_triage()
         email = _make_email()
         email.date = None  # type: ignore[assignment]
@@ -324,39 +373,43 @@ class TestLLMJudgment:
 
 
 # --------------------------------------------------------------------------- #
-# Step 7 — orchestration
+# Orchestration — agent-supplied decision → Asana task
 # --------------------------------------------------------------------------- #
 class TestOrchestration:
-    def test_maybe_create_task_dry_run_returns_preview_no_write(self) -> None:
+    def _decision(
+        self, category: str = "nudging", deadline: date | None = None
+    ) -> CategoryDecision:
+        return CategoryDecision(
+            category=category, deadline=deadline, rationale="agent-supplied"
+        )
+
+    def test_create_task_for_dry_run_returns_preview_no_write(self) -> None:
         t = _make_triage()
         t.asana = mock.MagicMock()
         email = _make_email(from_addr="ceo@rib-software.com", subject="please approve")
-        with mock.patch("httpx.post", return_value=_llm_response("nudging", None)):
-            result = t.maybe_create_task(email, lambda e: "body decide", dry_run=True)
+        result = t.create_task_for(email, self._decision(), dry_run=True)
         assert result.outcome == "preview"
         t.asana.create_task.assert_not_called()
         assert result.task_name is not None
 
-    def test_maybe_create_task_skips_when_not_qualified(self) -> None:
-        cfg = _make_config()
-        cfg.triage_internal_domain = "example.com"
-        t = _make_triage(cfg)
-        email = _make_email(from_addr="rand@example.com", subject="lunch")
-        result = t.maybe_create_task(email, lambda e: "let's eat", dry_run=False)
-        assert result.outcome == "not_qualified"
+    def test_create_task_for_invalid_category_returns_skipped_error(self) -> None:
+        t = _make_triage()
+        email = _make_email(from_addr="ceo@rib-software.com", subject="approve")
+        result = t.create_task_for(
+            email, self._decision(category="nonsense"), dry_run=True
+        )
+        assert result.outcome == "skipped_error"
+        assert result.category is None
 
     def test_dedup_hit_returns_skipped_dedup(self) -> None:
         t = _make_triage()
         t.asana = mock.MagicMock()
         t.asana.find_task_by_marker.return_value = True
         email = _make_email(from_addr="ceo@rib-software.com", subject="approve please")
-        with (
-            mock.patch("httpx.post", return_value=_llm_response("nudging", None)),
-            mock.patch(
-                "kontor_cli.triage.himalaya.read_message_id", return_value="mid-1"
-            ),
+        with mock.patch(
+            "kontor_cli.triage.himalaya.read_message_id", return_value="mid-1"
         ):
-            result = t.maybe_create_task(email, lambda e: "body", dry_run=False)
+            result = t.create_task_for(email, self._decision(), dry_run=False)
         assert result.outcome == "skipped_dedup"
         # scoped to the one target project gid
         t.asana.find_task_by_marker.assert_called_once_with(
@@ -390,14 +443,13 @@ class TestOrchestration:
             subject="approve",
             date=datetime(2026, 6, 28),
         )
-        with (
-            mock.patch(
-                "httpx.post",
-                return_value=_llm_response("nudging", None, rationale="needs a nudge"),
-            ),
-            mock.patch("kontor_cli.triage.himalaya.read_message_id", return_value="m1"),
+        decision = CategoryDecision(
+            category="nudging", deadline=None, rationale="needs a nudge"
+        )
+        with mock.patch(
+            "kontor_cli.triage.himalaya.read_message_id", return_value="m1"
         ):
-            t.maybe_create_task(email, lambda e: "please approve", dry_run=False)
+            t.create_task_for(email, decision, dry_run=False)
         notes = t.asana.create_task.call_args.args[2]
         assert "ceo@rib-software.com" in notes
         assert "2026-06-28" in notes
@@ -411,13 +463,12 @@ class TestOrchestration:
         t.asana = mock.MagicMock()
         t.asana.find_task_by_marker.return_value = False
         email = _make_email(from_addr="ceo@rib-software.com", subject="Quarterly sync")
-        with (
-            mock.patch(
-                "httpx.post", return_value=_llm_response("taking_decision", None)
-            ),
-            mock.patch("kontor_cli.triage.himalaya.read_message_id", return_value="m1"),
+        with mock.patch(
+            "kontor_cli.triage.himalaya.read_message_id", return_value="m1"
         ):
-            result = t.maybe_create_task(email, lambda e: "decide", dry_run=False)
+            result = t.create_task_for(
+                email, self._decision(category="taking_decision"), dry_run=False
+            )
         assert result.task_name == "[Taking Decision] Quarterly sync"
         assert result.outcome == "created"
 
@@ -427,53 +478,28 @@ class TestOrchestration:
         t.asana.find_task_by_marker.return_value = False
         t.asana.create_task.side_effect = AsanaError("500")
         email = _make_email(from_addr="ceo@rib-software.com", subject="approve")
-        with (
-            mock.patch("httpx.post", return_value=_llm_response("nudging", None)),
-            mock.patch("kontor_cli.triage.himalaya.read_message_id", return_value="m1"),
+        with mock.patch(
+            "kontor_cli.triage.himalaya.read_message_id", return_value="m1"
         ):
-            result = t.maybe_create_task(email, lambda e: "b", dry_run=False)
+            result = t.create_task_for(email, self._decision(), dry_run=False)
         assert result.outcome == "skipped_error"
 
-    def test_llm_none_returns_skipped_error(self) -> None:
-        import httpx
-
+    def test_none_client_returns_skipped_error(self) -> None:
         t = _make_triage()
+        t.asana = None
         email = _make_email(from_addr="ceo@rib-software.com", subject="approve")
-        with mock.patch("httpx.post", side_effect=httpx.RequestError("x")):
-            result = t.maybe_create_task(email, lambda e: "b", dry_run=False)
-        assert result.outcome == "skipped_error"
-        assert result.category is None
-
-    def test_body_fetch_fail_returns_skipped_error(self) -> None:
-        t = _make_triage()
-        email = _make_email(from_addr="ceo@rib-software.com")
-
-        def boom(_e: Email) -> str:
-            raise RuntimeError("fetch failed")
-
-        result = t.maybe_create_task(email, boom, dry_run=False)
-        assert result.outcome == "skipped_error"
-
-    def test_partial_run_resume_skips_already_created_via_marker(self) -> None:
-        t = _make_triage()
-        t.asana = mock.MagicMock()
-        t.asana.find_task_by_marker.return_value = True
-        email = _make_email(from_addr="ceo@rib-software.com", subject="approve")
-        with (
-            mock.patch("httpx.post", return_value=_llm_response("nudging", None)),
-            mock.patch("kontor_cli.triage.himalaya.read_message_id", return_value="m1"),
+        with mock.patch(
+            "kontor_cli.triage.himalaya.read_message_id", return_value="m1"
         ):
-            result = t.maybe_create_task(email, lambda e: "b", dry_run=False)
-        assert result.outcome == "skipped_dedup"
-        t.asana.create_task.assert_not_called()
+            result = t.create_task_for(email, self._decision(), dry_run=False)
+        assert result.outcome == "skipped_error"
 
     def test_date_resolution_failure_returns_skipped_error(self) -> None:
         t = _make_triage()
         t.asana = mock.MagicMock()
         email = _make_email(from_addr="ceo@rib-software.com", subject="approve")
         email.date = None  # type: ignore[assignment]
-        with mock.patch("httpx.post", return_value=_llm_response("nudging", None)):
-            result = t.maybe_create_task(email, lambda e: "b", dry_run=False)
+        result = t.create_task_for(email, self._decision(), dry_run=False)
         assert result.outcome == "skipped_error"
         assert result.target_date is None
 

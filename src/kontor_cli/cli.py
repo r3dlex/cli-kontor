@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import sys
-from datetime import UTC
+from datetime import UTC, date
 from pathlib import Path
 from typing import Any
 
@@ -16,7 +16,7 @@ from kontor_cli.config import (
     DavMailNotReachableError,
     HimalayaNotFoundError,
 )
-from kontor_cli.himalaya import list_emails, read_message_body
+from kontor_cli.himalaya import list_emails
 from kontor_cli.logging_config import configure_logging
 from kontor_cli.mailbox_cleanup import restore_archive_projects
 from kontor_cli.pipeline import (
@@ -26,7 +26,7 @@ from kontor_cli.pipeline import (
     RebuildPipeline,
 )
 from kontor_cli.rules import nl_rules
-from kontor_cli.triage import Triage
+from kontor_cli.triage import CategoryDecision, Triage
 
 logger = logging.getLogger("kontor_cli")
 
@@ -273,17 +273,13 @@ def rules_freeze_cmd(config_path: Path | None) -> None:
     type=click.Path(exists=False, path_type=Path),
     default=None,
 )
-@click.option(
-    "--dry-run",
-    is_flag=True,
-    default=True,
-    help="Preview mode — no Asana writes (always on; this command is preview-only)",
-)
-def triage_cmd(folder: str, config_path: Path | None, dry_run: bool) -> None:
-    """Preview which emails qualify for Asana task creation (preview-only).
+def triage_cmd(folder: str, config_path: Path | None) -> None:
+    """List qualifying emails for the agent to classify (read-only).
 
-    Always runs in preview mode — no Asana writes. Task creation is the job of
-    ``kontor-cli process``.
+    Surfaces each email that passes the deterministic eligibility gate, along
+    with its fetched body, so the agent can read it and pick one of the four
+    management-action categories. Creation is the job of ``triage-create``.
+    No Asana writes; no mailbox mutation.
     """
     try:
         cfg = Config.load(config_path)
@@ -293,25 +289,88 @@ def triage_cmd(folder: str, config_path: Path | None, dry_run: bool) -> None:
 
     root = (config_path or Path.cwd() / "config.yaml").parent
     triage = Triage(cfg, cwd=root)
-    emails = list_emails(folder, cwd=root)
 
-    for email in emails:
-
-        def _body_fetcher(e: Any, _root: Path = root, _folder: str = folder) -> str:
-            return read_message_body(e.id, _folder, cwd=_root)
-
-        # Preview-only: always dry-run. Writes are the job of `process`.
-        decision = triage.maybe_create_task(
-            email, body_fetcher=_body_fetcher, dry_run=True
-        )
-        qualify_flag = "y" if decision.qualifies else "n"
-        category = decision.category or "-"
-        target_date = decision.target_date or "-"
-        task_name = decision.task_name or "-"
+    for candidate in triage.list_candidates(folder):
+        sender = f"{candidate.from_name} <{candidate.from_addr}>".strip()
         click.echo(
-            f"{email.id}  qualify={qualify_flag}  reason={decision.reason}"
-            f"  category={category}  due={target_date}  task={task_name}"
+            f"{candidate.email_id}  from={sender}  subject={candidate.subject}"
+            f"  reason={candidate.reason}"
         )
+        click.echo(f"  body:\n{candidate.body}\n")
+
+
+@cli.command("triage-create")
+@click.option("--email-id", required=True, help="Email ID from `triage` output")
+@click.option(
+    "--category",
+    required=True,
+    type=click.Choice(
+        [
+            "information_gathering",
+            "nudging",
+            "being_the_example",
+            "taking_decision",
+        ]
+    ),
+    help="Agent-supplied management-action category",
+)
+@click.option(
+    "--deadline",
+    default=None,
+    help="Optional ISO date (YYYY-MM-DD); falls back to the email date",
+)
+@click.option("--folder", default="INBOX", help="Source folder (default: INBOX)")
+@click.option(
+    "--config",
+    "config_path",
+    type=click.Path(exists=False, path_type=Path),
+    default=None,
+)
+@click.option(
+    "--dry-run/--no-dry-run",
+    default=True,
+    help="Preview without writing to Asana (default); --no-dry-run creates the task",
+)
+def triage_create_cmd(
+    email_id: str,
+    category: str,
+    deadline: str | None,
+    folder: str,
+    config_path: Path | None,
+    dry_run: bool,
+) -> None:
+    """Create an Asana task for one agent-classified email.
+
+    Looks up the email by id, builds the agent-supplied ``CategoryDecision``,
+    and orchestrates an idempotent Asana task. Defaults to a dry-run preview;
+    pass ``--no-dry-run`` to perform the real create.
+    """
+    try:
+        cfg = Config.load(config_path)
+    except ConfigError as exc:
+        click.echo(f"Config error: {exc}", err=True)
+        sys.exit(1)
+
+    root = (config_path or Path.cwd() / "config.yaml").parent
+    emails = list_emails(folder, cwd=root)
+    email = next((e for e in emails if e.id == email_id), None)
+    if email is None:
+        click.echo(f"Email {email_id} not found in {folder}.", err=True)
+        sys.exit(1)
+
+    parsed_deadline = date.fromisoformat(deadline) if deadline else None
+    decision = CategoryDecision(
+        category=category,
+        deadline=parsed_deadline,
+        rationale="agent-supplied",
+    )
+
+    triage = Triage(cfg, cwd=root)
+    result = triage.create_task_for(email, decision, dry_run=dry_run)
+    click.echo(
+        f"outcome={result.outcome}  task={result.task_name or '-'}"
+        f"  due={result.target_date or '-'}"
+    )
 
 
 def _rules_freeze(cfg: Config, root: Path) -> None:

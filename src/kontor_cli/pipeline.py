@@ -20,10 +20,8 @@ from kontor_cli.himalaya import (
     create_folder,
     list_emails,
     move_email,
-    read_message_body,
 )
 from kontor_cli.rules import nl_rules, python_rules, yaml_dsl
-from kontor_cli.triage import Triage
 
 logger = logging.getLogger("kontor_cli.pipeline")
 
@@ -100,27 +98,6 @@ class Pipeline:
         self.llm_failures = 0
         self._created_folders: set[str] = set()  # cache of folders already created
 
-        # Email → Asana triage (Step 8). Only constructed when enabled.
-        self.triage = Triage(config, cwd) if config.triage_enabled else None
-        self.triage_tasks_created = 0
-        self.triage_skipped_dedup = 0
-        self.triage_skipped_errors = 0
-        self._triage_validated = False  # validate_projects() runs at most once
-
-    def _validate_triage_projects(self, dry_run: bool, triage_scope: bool) -> None:
-        """Validate Asana projects once, up-front, before processing emails.
-
-        Loud fail-fast: an AsanaError here aborts the whole run. Skipped in
-        dry-run, when triage is disabled/out-of-scope, or when already run.
-        """
-        if self.triage is None or not triage_scope or dry_run:
-            return
-        if self._triage_validated:
-            return
-        self._triage_validated = True
-        if self.triage.asana is not None:
-            self.triage.asana.validate_projects()
-
     def _ensure_folder(self, folder: str) -> None:
         """Ensure a folder exists. Creates it if valid and missing."""
         if folder in self._created_folders:
@@ -193,44 +170,12 @@ class Pipeline:
         result = self._llm_classify(email)
         return result.folder if result else None
 
-    def _process_email(
-        self, email: Email, dry_run: bool = False, triage_scope: bool = False
-    ) -> str | None:
-        """Process a single email: classify → decide target folder → move.
-
-        ``triage_scope`` enables content-driven email → Asana triage for this
-        phase (realtime always; rebuild only when configured; heal never).
-        """
+    def _process_email(self, email: Email, dry_run: bool = False) -> str | None:
+        """Process a single email: classify → decide target folder → move."""
         current_folder = email.folder
 
         # Step 1: classify (rules, then LLM fallback) and decide the target
         target = self.folder_policy.target_for(email.date, self._classify(email))
-
-        # Step 1b: content-driven triage — fires on the classified email
-        # regardless of the move outcome below (loop-skip / already-correct /
-        # move failure all still triage). A triage bug must NEVER break the
-        # move loop, so everything here is defensively contained.
-        if self.triage is not None and triage_scope:
-            try:
-                decision = self.triage.maybe_create_task(
-                    email,
-                    body_fetcher=lambda e: read_message_body(
-                        e.id, e.folder, cwd=self.cwd
-                    ),
-                    dry_run=dry_run,
-                )
-                if decision.outcome == "created":
-                    self.triage_tasks_created += 1
-                elif decision.outcome == "skipped_dedup":
-                    self.triage_skipped_dedup += 1
-                elif decision.outcome == "skipped_error":
-                    self.triage_skipped_errors += 1
-            except Exception:
-                logger.exception(
-                    f"Triage failed for email {email.id}",
-                    extra={"email_id": email.id},
-                )
-                self.triage_skipped_errors += 1
 
         # Step 2: Loop prevention
         if (email.id, target) in self.move_history:
@@ -350,9 +295,6 @@ class Pipeline:
             "skipped_already_correct": self.skipped_already_correct,
             "skipped_loop": self.skipped_loop,
             "llm_failures": self.llm_failures,
-            "triage_tasks_created": self.triage_tasks_created,
-            "triage_skipped_dedup": self.triage_skipped_dedup,
-            "triage_skipped_errors": self.triage_skipped_errors,
         }
         logger.info(f"Phase {phase} complete", extra={**s, "phase": phase})
         return s
@@ -363,8 +305,6 @@ class RebuildPipeline(Pipeline):
 
     def run(self, dry_run: bool = False) -> dict[str, Any]:
         logger.info("Starting Historical Rebuild", extra={"phase": "rebuild"})
-        triage_scope = self.config.triage_scan_rebuild
-        self._validate_triage_projects(dry_run, triage_scope)
         total_processed = 0
         for folder in SCAN_FOLDERS:
             try:
@@ -374,7 +314,7 @@ class RebuildPipeline(Pipeline):
                 continue
 
             for email in emails:
-                self._process_email(email, dry_run=dry_run, triage_scope=triage_scope)
+                self._process_email(email, dry_run=dry_run)
                 total_processed += 1
 
         return self._summary("rebuild", total_processed)
@@ -385,7 +325,6 @@ class RealtimePipeline(Pipeline):
 
     def run(self, dry_run: bool = False) -> dict[str, Any]:
         logger.info("Starting Real-Time Processing", extra={"phase": "realtime"})
-        self._validate_triage_projects(dry_run, triage_scope=True)
         try:
             emails = list_emails("INBOX", cwd=self.cwd)
         except HimalayaError as exc:
@@ -394,7 +333,7 @@ class RealtimePipeline(Pipeline):
 
         total = 0
         for email in emails:
-            self._process_email(email, dry_run=dry_run, triage_scope=True)
+            self._process_email(email, dry_run=dry_run)
             total += 1
 
         return self._summary("realtime", total)
