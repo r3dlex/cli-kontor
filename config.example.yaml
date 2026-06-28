@@ -87,7 +87,26 @@ logging:
 #   enabled: false
 #   scan_rebuild: false
 #   internal_domain: "rib-software.com"
+#   # Whose input/action a task must require. Sender importance alone never
+#   # creates a task — the content must request THIS person's decision/review/
+#   # approval/answer (the agent applies this precision rule when classifying).
+#   owner_email: "you@rib-software.com"
 #   content_high_threshold: 0.6
+#   # Exclusion rule: senders matching any substring (name or address) never
+#   # produce an action item. The is_automated() heuristic already catches
+#   # no-reply/notifications/digests/*.mail.microsoft/*-noreply/Office365Reports;
+#   # add site-specific noise here.
+#   exclude_senders:
+#     - "no-reply"
+#     - "noreply"
+#     - "notifications"
+#     - "daily digest"
+#     - "google.com"
+#     - "updates.miro"
+#     - "office365reports"
+#     - "teams.mail.microsoft"
+#     - "engage.mail.microsoft"
+#     - "azure-noreply"
 #   sender_tiers:
 #     extremely_important:
 #       - "Rolf Helmes"

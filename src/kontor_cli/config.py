@@ -74,6 +74,11 @@ class Config:
         self.triage_content_high_threshold: float = float(
             triage.get("content_high_threshold", 0.6)
         )
+        self.triage_exclude_senders: list[str] = triage.get("exclude_senders", [])
+        # The owner whose input/action a task must require. Sender importance
+        # alone never justifies a task — the content must request THIS person's
+        # decision/review/approval/answer.
+        self.triage_owner_email: str = triage.get("owner_email", "")
 
     @classmethod
     def load(cls, path: str | Path | None = None) -> Config:
