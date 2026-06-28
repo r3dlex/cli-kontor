@@ -35,6 +35,9 @@ class MockConfig:
     llm_temperature = 0.0
     llm_timeout = 30
     pipeline_confidence_threshold = 0.7
+    # Triage defaults: disabled, so Pipeline.triage stays None for existing tests.
+    triage_enabled = False
+    triage_scan_rebuild = False
 
 
 class TestRebuildPipeline:
@@ -345,6 +348,175 @@ class TestRealtimePipelineErrors:
             result = p.run(dry_run=False)
         assert result["phase"] == "realtime"
         assert "error" in result
+
+
+class TriageConfig(MockConfig):
+    """MockConfig variant with triage enabled."""
+
+    triage_enabled = True
+    triage_scan_rebuild = False
+    asana_pat = "pat-test"
+    asana_workspace_gid = "ws-test"
+    asana_project_gids = {"taking_decision": "proj-1"}
+    triage_sender_tiers: dict[str, list[str]] = {}
+    triage_internal_domain = "example.com"
+    triage_content_high_threshold = 0.7
+
+
+def _decision(outcome: str):
+    """Build a minimal TriageDecision-like stub with the given outcome."""
+    return mock.MagicMock(outcome=outcome)
+
+
+class TestTriageIntegration:
+    def _pipeline(self, tmp_path: Path, *, scan_rebuild: bool = False, cls=None):
+        """Construct a pipeline with a fake triage engine and stubbed classify."""
+        from kontor_cli.pipeline import RealtimePipeline
+
+        cls = cls or RealtimePipeline
+        cfg = TriageConfig()
+        cfg.triage_scan_rebuild = scan_rebuild
+        with mock.patch("kontor_cli.pipeline.Triage") as mock_triage_cls:
+            fake_triage = mock_triage_cls.return_value
+            fake_triage.asana = mock.MagicMock()
+            fake_triage.maybe_create_task.return_value = _decision("created")
+            p = cls(cfg, cwd=tmp_path)
+        p.rules_engine.classify = lambda e: "2_Projects/PRJ_Test"
+        p.rules_engine.get_nl_context = lambda: ""
+        return p
+
+    def test_triage_fires_from_classification_even_when_move_email_raises(
+        self, tmp_path: Path
+    ) -> None:
+        p = self._pipeline(tmp_path)
+        email = _email("1", "INBOX")
+        err = HimalayaError("connection timeout")
+        with mock.patch("kontor_cli.pipeline.move_email", side_effect=err):
+            with mock.patch("kontor_cli.pipeline.create_folder"):
+                with mock.patch(
+                    "kontor_cli.pipeline.read_message_body", return_value="b"
+                ):
+                    p._process_email(email, dry_run=False, triage_scope=True)
+
+        p.triage.maybe_create_task.assert_called_once()
+        assert p.triage_tasks_created == 1
+
+    def test_triage_not_invoked_when_triage_enabled_false(self, tmp_path: Path) -> None:
+        from kontor_cli.pipeline import RealtimePipeline
+
+        p = RealtimePipeline(MockConfig(), cwd=tmp_path)
+        assert p.triage is None
+        p.rules_engine.classify = lambda e: "2_Projects/PRJ_Test"
+        p.rules_engine.get_nl_context = lambda: ""
+        email = _email("1", "INBOX")
+        with mock.patch("kontor_cli.pipeline.move_email"):
+            with mock.patch("kontor_cli.pipeline.create_folder"):
+                p._process_email(email, dry_run=False, triage_scope=True)
+        # No crash, counters stay zero.
+        assert p.triage_tasks_created == 0
+
+    def test_triage_dry_run_propagates(self, tmp_path: Path) -> None:
+        p = self._pipeline(tmp_path)
+        p.triage.maybe_create_task.return_value = _decision("preview")
+        email = _email("1", "INBOX")
+        with mock.patch("kontor_cli.pipeline.read_message_body", return_value="b"):
+            p._process_email(email, dry_run=True, triage_scope=True)
+        _, kwargs = p.triage.maybe_create_task.call_args
+        assert kwargs["dry_run"] is True
+
+    def test_triage_skipped_in_rebuild_when_scan_rebuild_false(
+        self, tmp_path: Path
+    ) -> None:
+        from kontor_cli.pipeline import RebuildPipeline
+
+        emails = [_email("1", "INBOX")]
+        p = self._pipeline(tmp_path, scan_rebuild=False, cls=RebuildPipeline)
+        with mock.patch("kontor_cli.pipeline.list_emails", return_value=emails):
+            with mock.patch("kontor_cli.pipeline.move_email"):
+                with mock.patch("kontor_cli.pipeline.create_folder"):
+                    p.run(dry_run=False)
+        p.triage.maybe_create_task.assert_not_called()
+
+    def test_triage_runs_in_rebuild_when_scan_rebuild_true(
+        self, tmp_path: Path
+    ) -> None:
+        from kontor_cli.pipeline import RebuildPipeline
+
+        emails = [_email("1", "INBOX")]
+        p = self._pipeline(tmp_path, scan_rebuild=True, cls=RebuildPipeline)
+        with mock.patch("kontor_cli.pipeline.list_emails", return_value=emails):
+            with mock.patch("kontor_cli.pipeline.move_email"):
+                with mock.patch("kontor_cli.pipeline.create_folder"):
+                    with mock.patch(
+                        "kontor_cli.pipeline.read_message_body", return_value="b"
+                    ):
+                        p.run(dry_run=False)
+        p.triage.maybe_create_task.assert_called()
+
+    def test_triage_exception_does_not_break_move_loop(self, tmp_path: Path) -> None:
+        emails = [_email("1", "INBOX"), _email("2", "INBOX")]
+        p = self._pipeline(tmp_path)
+        p.triage.maybe_create_task.side_effect = RuntimeError("triage bug")
+        with mock.patch("kontor_cli.pipeline.list_emails", return_value=emails):
+            with mock.patch("kontor_cli.pipeline.move_email") as mock_move:
+                with mock.patch("kontor_cli.pipeline.create_folder"):
+                    with mock.patch(
+                        "kontor_cli.pipeline.read_message_body", return_value="b"
+                    ):
+                        result = p.run(dry_run=False)
+        # Both emails still moved despite triage raising on each.
+        assert mock_move.call_count == 2
+        assert p.triage_skipped_errors == 2
+        assert result["phase"] == "realtime"
+
+    def test_validate_projects_called_up_front_when_enabled_and_not_dry_run(
+        self, tmp_path: Path
+    ) -> None:
+        p = self._pipeline(tmp_path)
+        with mock.patch("kontor_cli.pipeline.list_emails", return_value=[]):
+            p.run(dry_run=False)
+        p.triage.asana.validate_projects.assert_called_once()
+
+    def test_validate_projects_not_called_in_dry_run(self, tmp_path: Path) -> None:
+        p = self._pipeline(tmp_path)
+        with mock.patch("kontor_cli.pipeline.list_emails", return_value=[]):
+            p.run(dry_run=True)
+        p.triage.asana.validate_projects.assert_not_called()
+
+    def test_validate_projects_error_aborts_run(self, tmp_path: Path) -> None:
+        from kontor_cli.asana_client import AsanaError
+
+        p = self._pipeline(tmp_path)
+        p.triage.asana.validate_projects.side_effect = AsanaError("missing project")
+        with mock.patch("kontor_cli.pipeline.list_emails", return_value=[]):
+            try:
+                p.run(dry_run=False)
+            except AsanaError:
+                pass
+            else:
+                raise AssertionError("expected AsanaError to propagate")
+
+    def test_triage_tally_by_outcome(self, tmp_path: Path) -> None:
+        p = self._pipeline(tmp_path)
+        email = _email("1", "INBOX")
+        with mock.patch("kontor_cli.pipeline.read_message_body", return_value="b"):
+            with mock.patch("kontor_cli.pipeline.move_email"):
+                with mock.patch("kontor_cli.pipeline.create_folder"):
+                    p.triage.maybe_create_task.return_value = _decision("skipped_dedup")
+                    p._process_email(email, dry_run=False, triage_scope=True)
+                    p.triage.maybe_create_task.return_value = _decision("skipped_error")
+                    p._process_email(
+                        _email("2", "INBOX"), dry_run=False, triage_scope=True
+                    )
+        assert p.triage_skipped_dedup == 1
+        assert p.triage_skipped_errors == 1
+
+    def test_summary_includes_triage_counters(self, tmp_path: Path) -> None:
+        p = self._pipeline(tmp_path)
+        s = p._summary("realtime", 0)
+        assert "triage_tasks_created" in s
+        assert "triage_skipped_dedup" in s
+        assert "triage_skipped_errors" in s
 
 
 class TestHealPipelineViolationPaths:

@@ -58,6 +58,22 @@ class Config:
         ]
         self.log_level: str = data["logging"]["level"]
         self.log_format: str = data["logging"]["format"]
+        # Optional asana section
+        asana = data.get("asana", {})
+        self.asana_pat: str | None = asana.get("pat") or None
+        self.asana_workspace_gid: str | None = asana.get("workspace_gid") or None
+        self.asana_project_gids: dict[str, str] = asana.get("project_gids") or {}
+        # Optional triage section
+        triage = data.get("triage", {})
+        self.triage_enabled: bool = bool(triage.get("enabled", False))
+        self.triage_scan_rebuild: bool = bool(triage.get("scan_rebuild", False))
+        self.triage_internal_domain: str = triage.get(
+            "internal_domain", "rib-software.com"
+        )
+        self.triage_sender_tiers: dict[str, list[str]] = triage.get("sender_tiers", {})
+        self.triage_content_high_threshold: float = float(
+            triage.get("content_high_threshold", 0.6)
+        )
 
     @classmethod
     def load(cls, path: str | Path | None = None) -> Config:
@@ -100,6 +116,30 @@ class Config:
             raise ConfigError("davmail.imap_port must be an integer")
         if not isinstance(data["davmail"].get("smtp_port"), int):
             raise ConfigError("davmail.smtp_port must be an integer")
+
+        # Conditional asana validation: only required when triage.enabled is true
+        if data.get("triage", {}).get("enabled"):
+            asana = data.get("asana")
+            if asana is None:
+                raise ConfigError("triage.enabled is true but asana section is missing")
+            if not asana.get("pat"):
+                raise ConfigError("triage.enabled is true but asana.pat is missing")
+            if not asana.get("workspace_gid"):
+                raise ConfigError(
+                    "triage.enabled is true but asana.workspace_gid is missing"
+                )
+            _required_project_gids = [
+                "information_gathering",
+                "nudging",
+                "being_the_example",
+                "taking_decision",
+            ]
+            project_gids = asana.get("project_gids") or {}
+            for key in _required_project_gids:
+                if key not in project_gids:
+                    raise ConfigError(
+                        f"triage.enabled is true but asana.project_gids.{key} is missing"
+                    )
 
     def check_prerequisites(self) -> None:
         """Run startup checks: himalaya, himalaya version, DavMail connectivity."""

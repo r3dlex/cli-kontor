@@ -34,18 +34,22 @@ class Email:
     date: datetime
     flags: dict[str, bool]
     folder: str
+    from_name: str = ""
 
     @classmethod
     def from_json(cls, obj: dict[str, Any], folder: str) -> Email:
         """Parse from a himalaya envelope JSON dict."""
         from_field = obj.get("from", {})
-        addr = (
-            from_field.get("addr", from_field.get("address", ""))
-            if isinstance(from_field, dict)
-            else str(from_field)
-        )
+        if isinstance(from_field, dict):
+            addr = from_field.get("addr", from_field.get("address", ""))
+            name = from_field.get("name", "")
+        else:
+            addr = str(from_field)
+            name = ""
         if not isinstance(addr, str):
             addr = str(addr)
+        if not isinstance(name, str):
+            name = str(name)
         date_str = obj.get("date", "")
         try:
             date = datetime.fromisoformat(date_str.replace("Z", "+00:00"))
@@ -54,6 +58,7 @@ class Email:
         return cls(
             id=str(obj.get("id", "")),
             from_addr=addr,
+            from_name=name,
             subject=obj.get("subject", ""),
             date=date,
             flags=obj.get("flags", {}),
@@ -163,6 +168,35 @@ def list_folders(cwd: str | Path | None = None) -> list[str]:
 def delete_folder(folder_name: str, cwd: str | Path | None = None) -> None:
     """Delete an empty folder."""
     _run(["folder", "delete", folder_name], cwd=cwd)
+
+
+def read_message_body(
+    email_id: str, folder: str = "INBOX", cwd: str | Path | None = None
+) -> str:
+    """Fetch plaintext body read-only (no seen flag) via himalaya v1.2.0."""
+    return _run(
+        ["message", "read", email_id, "-f", folder, "--no-headers", "--preview"],
+        cwd=cwd,
+    )
+
+
+def read_message_id(
+    email_id: str, folder: str = "INBOX", cwd: str | Path | None = None
+) -> str | None:
+    """Fetch the Message-ID header (stable dedup key); None if absent.
+
+    Issues a separate himalaya call with -H (mutually exclusive with --no-headers).
+    Parses the 'Message-Id:' line case-insensitively and strips surrounding <...>.
+    """
+    out = _run(
+        ["message", "read", email_id, "-f", folder, "-H", "Message-Id", "--preview"],
+        cwd=cwd,
+    )
+    for line in out.splitlines():
+        if line.lower().startswith("message-id:"):
+            value = line.split(":", 1)[1].strip()
+            return value.strip("<>")
+    return None
 
 
 def delete_email(email_id: str, folder: str, cwd: str | Path | None = None) -> None:

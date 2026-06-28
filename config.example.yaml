@@ -67,3 +67,64 @@ pipeline:
 logging:
   level: "INFO"
   format: "json"
+
+# ---------------------------------------------------------------------------
+# Asana integration (required when triage.enabled is true)
+# ---------------------------------------------------------------------------
+# asana:
+#   pat: "REPLACE_WITH_ASANA_PAT"
+#   workspace_gid: "REPLACE_WITH_WORKSPACE_GID"
+#   project_gids:
+#     information_gathering: "REPLACE_WITH_PROJECT_GID"
+#     nudging: "REPLACE_WITH_PROJECT_GID"
+#     being_the_example: "REPLACE_WITH_PROJECT_GID"
+#     taking_decision: "REPLACE_WITH_PROJECT_GID"
+
+# ---------------------------------------------------------------------------
+# Triage pipeline (optional — disabled by default)
+# ---------------------------------------------------------------------------
+# triage:
+#   enabled: false
+#   scan_rebuild: false
+#   internal_domain: "rib-software.com"
+#   content_high_threshold: 0.6
+#   sender_tiers:
+#     extremely_important:
+#       - "Rolf Helmes"
+#       - "René Wolf"
+#       - "Martin Biesinger"
+#       - "Martin Muth"
+#       - "Georg Reitschmidt"
+#       - "Joe de Klerk"
+#       - "Kevin Thompson"
+#     very_important:
+#       - "Arthur Berganski"
+#       - "Sanket Khandare"
+#       - "Guille Majchrzak"
+#       - "Julien Seroi"
+#       - "Stefan Stelzer"
+#       - "Beate Kasper"
+#       - "Reinhardt Fraunhoffer"
+#       - "Christopher Leineweber"
+#       - "Roman Trottner"
+#       - "Han Che"
+#       - "Tim Laine"
+#       - "Florian Haag"
+#       - "Frank Bädeker"
+#       - "Silvio Brendel"
+#       - "Patrick Janas"
+#       - "Jignasa Purohit"
+#       - "Ashwini Bhujabalaiah"
+#       - "Gautam Makker"
+#       - "Jeff Ruan"
+#     also_important:
+#       - "Helen Wiersma"
+#       - "Jaan Tasane"
+#       - "Estela Grana Perez"
+#       - "Carmen Fernández"
+#       - "Thomas Rixner"
+#       - "Kim Fischer"
+#       - "Sinda Bouzir"
+#       - "Jinlin Shen"
+#       - "Simon Welß"
+#       - "Benjamin Balkanci"
