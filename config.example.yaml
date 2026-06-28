@@ -85,7 +85,6 @@ logging:
 # ---------------------------------------------------------------------------
 # triage:
 #   enabled: false
-#   scan_rebuild: false
 #   internal_domain: "rib-software.com"
 #   # Whose input/action a task must require. Sender importance alone never
 #   # creates a task — the content must request THIS person's decision/review/

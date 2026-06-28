@@ -208,7 +208,6 @@ class TestTriageAndAsanaConfig:
         }
         data["triage"] = {
             "enabled": True,
-            "scan_rebuild": False,
             "internal_domain": "rib-software.com",
             "sender_tiers": {
                 "extremely_important": ["Rolf Helmes"],
@@ -226,7 +225,6 @@ class TestTriageAndAsanaConfig:
         assert cfg.asana_project_gids["being_the_example"] == "333"
         assert cfg.asana_project_gids["taking_decision"] == "444"
         assert cfg.triage_enabled is True
-        assert cfg.triage_scan_rebuild is False
         assert cfg.triage_internal_domain == "rib-software.com"
         assert cfg.triage_sender_tiers["extremely_important"] == ["Rolf Helmes"]
         assert cfg.triage_content_high_threshold == 0.6

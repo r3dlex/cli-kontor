@@ -503,9 +503,6 @@ class MockConfig:
     llm_temperature = 0.0
     llm_timeout = 30
     pipeline_confidence_threshold = 0.7
-    # Triage disabled: Pipeline.triage stays None for these gap tests.
-    triage_enabled = False
-    triage_scan_rebuild = False
 
 
 class TestPipelineGaps:

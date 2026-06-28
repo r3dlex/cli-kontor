@@ -283,6 +283,10 @@ def triage_cmd(folder: str, config_path: Path | None) -> None:
         click.echo(f"Config error: {exc}", err=True)
         sys.exit(1)
 
+    if not cfg.triage_enabled:
+        click.echo("Triage is disabled (set triage.enabled: true).", err=True)
+        sys.exit(1)
+
     root = (config_path or Path.cwd() / "config.yaml").parent
     triage = Triage(cfg, cwd=root)
 
@@ -345,6 +349,10 @@ def triage_create_cmd(
         cfg = Config.load(config_path)
     except ConfigError as exc:
         click.echo(f"Config error: {exc}", err=True)
+        sys.exit(1)
+
+    if not cfg.triage_enabled:
+        click.echo("Triage is disabled (set triage.enabled: true).", err=True)
         sys.exit(1)
 
     root = (config_path or Path.cwd() / "config.yaml").parent
