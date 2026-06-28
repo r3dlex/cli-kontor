@@ -16,9 +16,11 @@ from kontor_cli.config import (
     DavMailNotReachableError,
     HimalayaNotFoundError,
 )
+from kontor_cli.himalaya import list_emails, read_message_body
 from kontor_cli.logging_config import configure_logging
 from kontor_cli.mailbox_cleanup import restore_archive_projects
 from kontor_cli.pipeline import HealPipeline, RealtimePipeline, RebuildPipeline
+from kontor_cli.triage import Triage
 
 logger = logging.getLogger("kontor_cli")
 
@@ -257,6 +259,55 @@ def rules_freeze_cmd(config_path: Path | None) -> None:
         sys.exit(1)
     root = (config_path or Path.cwd() / "config.yaml").parent
     _rules_freeze(cfg, root)
+
+
+@cli.command("triage")
+@click.option("--folder", default="INBOX", help="Source folder (default: INBOX)")
+@click.option(
+    "--config",
+    "config_path",
+    type=click.Path(exists=False, path_type=Path),
+    default=None,
+)
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    default=True,
+    help="Preview mode — no Asana writes (always on; this command is preview-only)",
+)
+def triage_cmd(folder: str, config_path: Path | None, dry_run: bool) -> None:
+    """Preview which emails qualify for Asana task creation (preview-only).
+
+    Always runs in preview mode — no Asana writes. Task creation is the job of
+    ``kontor-cli process``.
+    """
+    try:
+        cfg = Config.load(config_path)
+    except ConfigError as exc:
+        click.echo(f"Config error: {exc}", err=True)
+        sys.exit(1)
+
+    root = (config_path or Path.cwd() / "config.yaml").parent
+    triage = Triage(cfg, cwd=root)
+    emails = list_emails(folder, cwd=root)
+
+    for email in emails:
+
+        def _body_fetcher(e: Any, _root: Path = root, _folder: str = folder) -> str:
+            return read_message_body(e.id, _folder, cwd=_root)
+
+        # Preview-only: always dry-run. Writes are the job of `process`.
+        decision = triage.maybe_create_task(
+            email, body_fetcher=_body_fetcher, dry_run=True
+        )
+        qualify_flag = "y" if decision.qualifies else "n"
+        category = decision.category or "-"
+        target_date = decision.target_date or "-"
+        task_name = decision.task_name or "-"
+        click.echo(
+            f"{email.id}  qualify={qualify_flag}  reason={decision.reason}"
+            f"  category={category}  due={target_date}  task={task_name}"
+        )
 
 
 def _rules_freeze(cfg: Config, root: Path) -> None:

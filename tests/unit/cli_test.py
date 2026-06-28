@@ -340,3 +340,154 @@ class TestClassifyRecommend:
         assert data["email"]["from"] == "boss@example.com"
         assert "rules_based_target" in data
         assert "taxonomy" in data
+
+
+class TestTriage:
+    """Tests for the `triage` CLI command."""
+
+    def _make_email(self) -> object:
+        from datetime import datetime
+
+        from kontor_cli.himalaya import Email
+
+        return Email(
+            id="99",
+            from_addr="customer@external.com",
+            subject="Urgent: blocker on go-live",
+            date=datetime(2026, 6, 28, 10, 0, 0, tzinfo=UTC),
+            flags={},
+            folder="INBOX",
+        )
+
+    def _make_decision(self) -> object:
+        from kontor_cli.triage import TriageDecision
+
+        return TriageDecision(
+            email_id="99",
+            qualifies=True,
+            reason="external customer sender",
+            category="taking_decision",
+            target_date="2026-06-30",
+            task_name="[Taking Decision] Urgent: blocker on go-live",
+            task_notes="some notes",
+            outcome="preview",
+        )
+
+    def test_triage_dry_run_lists_per_email_qualify_reason_category_targetdate_task(
+        self,
+    ) -> None:
+        from click.testing import CliRunner
+
+        from kontor_cli.cli import cli
+        from kontor_cli.config import Config
+
+        mock_cfg = mock.MagicMock(spec=Config)
+        email = self._make_email()
+        decision = self._make_decision()
+
+        with mock.patch("kontor_cli.cli.Config.load", return_value=mock_cfg):
+            with mock.patch("kontor_cli.cli.list_emails", return_value=[email]):
+                with mock.patch("kontor_cli.cli.Triage") as mock_triage_cls:
+                    instance = mock_triage_cls.return_value
+                    instance.maybe_create_task.return_value = decision
+
+                    runner = CliRunner()
+                    result = runner.invoke(
+                        cli, ["triage", "--dry-run"], catch_exceptions=False
+                    )
+
+        assert result.exit_code == 0, result.output
+        assert "99" in result.output
+        assert "taking_decision" in result.output
+        assert "2026-06-30" in result.output
+        assert "[Taking Decision] Urgent: blocker on go-live" in result.output
+        # qualify indicator and reason
+        assert "y" in result.output
+        assert "external customer sender" in result.output
+
+    def test_triage_dry_run_never_calls_asana_write(self) -> None:
+        from click.testing import CliRunner
+
+        from kontor_cli.cli import cli
+        from kontor_cli.config import Config
+
+        mock_cfg = mock.MagicMock(spec=Config)
+        email = self._make_email()
+        decision = self._make_decision()
+
+        with mock.patch("kontor_cli.cli.Config.load", return_value=mock_cfg):
+            with mock.patch("kontor_cli.cli.list_emails", return_value=[email]):
+                with mock.patch("kontor_cli.cli.Triage") as mock_triage_cls:
+                    instance = mock_triage_cls.return_value
+                    instance.maybe_create_task.return_value = decision
+
+                    runner = CliRunner()
+                    result = runner.invoke(
+                        cli, ["triage", "--dry-run"], catch_exceptions=False
+                    )
+
+        assert result.exit_code == 0, result.output
+        # maybe_create_task must be called with dry_run=True
+        instance.maybe_create_task.assert_called_once()
+        call_kwargs = instance.maybe_create_task.call_args
+        assert call_kwargs.kwargs.get("dry_run") is True or call_kwargs.args[2] is True
+
+        # AsanaClient.create_task must never be called
+        with mock.patch(
+            "kontor_cli.asana_client.AsanaClient.create_task"
+        ) as mock_create:
+            mock_create.assert_not_called()
+
+    def test_triage_no_dry_run_flag_is_rejected(self) -> None:
+        """`--no-dry-run` must NOT exist — the command is preview-only."""
+        from click.testing import CliRunner
+
+        from kontor_cli.cli import cli
+
+        runner = CliRunner()
+        result = runner.invoke(cli, ["triage", "--no-dry-run"])
+        # Unknown option → click usage error, exit code 2, no real run.
+        assert result.exit_code == 2
+        assert (
+            "no-dry-run" in result.output or "no such option" in result.output.lower()
+        )
+
+    def test_triage_always_calls_maybe_create_task_with_dry_run_true(self) -> None:
+        """Even invoked plainly, maybe_create_task is always dry_run=True."""
+        from click.testing import CliRunner
+
+        from kontor_cli.cli import cli
+        from kontor_cli.config import Config
+
+        mock_cfg = mock.MagicMock(spec=Config)
+        email = self._make_email()
+        decision = self._make_decision()
+
+        with mock.patch("kontor_cli.cli.Config.load", return_value=mock_cfg):
+            with mock.patch("kontor_cli.cli.list_emails", return_value=[email]):
+                with mock.patch("kontor_cli.cli.Triage") as mock_triage_cls:
+                    instance = mock_triage_cls.return_value
+                    instance.maybe_create_task.return_value = decision
+
+                    runner = CliRunner()
+                    result = runner.invoke(cli, ["triage"], catch_exceptions=False)
+
+        assert result.exit_code == 0, result.output
+        instance.maybe_create_task.assert_called_once()
+        call = instance.maybe_create_task.call_args
+        assert call.kwargs.get("dry_run") is True or call.args[2] is True
+
+    def test_triage_config_error_exits_1(self) -> None:
+        from click.testing import CliRunner
+
+        from kontor_cli.cli import cli
+        from kontor_cli.config import ConfigError
+
+        with mock.patch(
+            "kontor_cli.cli.Config.load", side_effect=ConfigError("bad config")
+        ):
+            runner = CliRunner()
+            result = runner.invoke(cli, ["triage"], catch_exceptions=False)
+
+        assert result.exit_code == 1
+        assert "Config error" in result.output

@@ -19,6 +19,8 @@ from kontor_cli.himalaya import (
     list_emails,
     list_folders,
     move_email,
+    read_message_body,
+    read_message_id,
 )
 
 SAMPLE_ENVELOPES = [
@@ -54,6 +56,30 @@ class TestEmailFromJson:
         assert email.subject == "Test"
         assert email.flags == {"seen": True}
         assert email.folder == "INBOX"
+
+    def test_email_from_json_captures_name_and_address(self) -> None:
+        # Real himalaya envelope shape carries both address AND name.
+        env = {
+            "id": "50",
+            "from": {"address": "rolf.helmes@rib-software.com", "name": "Rolf Helmes"},
+            "subject": "Decision needed",
+            "date": "2024-06-15T09:00:00Z",
+            "flags": {},
+        }
+        email = Email.from_json(env, "INBOX")
+        assert email.from_addr == "rolf.helmes@rib-software.com"
+        assert email.from_name == "Rolf Helmes"
+
+    def test_email_from_json_name_defaults_empty_when_absent(self) -> None:
+        env = {
+            "id": "51",
+            "from": {"address": "x@y.com"},
+            "subject": "No name",
+            "date": "2024-06-15T09:00:00Z",
+            "flags": {},
+        }
+        email = Email.from_json(env, "INBOX")
+        assert email.from_name == ""
 
     def test_email_from_json_supports_addr_field(self) -> None:
         env = {
@@ -306,6 +332,64 @@ class TestDeleteFolder:
                 "delete",
                 "2_Projects/Old",
             ]
+
+
+class TestReadMessageBody:
+    def test_read_message_body_invokes_exact_arg_vector(self) -> None:
+        with mock.patch("kontor_cli.himalaya._run", return_value="body text") as p:
+            read_message_body("42", folder="INBOX")
+            p.assert_called_once_with(
+                ["message", "read", "42", "-f", "INBOX", "--no-headers", "--preview"],
+                cwd=None,
+            )
+
+    def test_read_message_body_returns_plaintext(self) -> None:
+        expected = "Hello,\n\nThis is the body.\n"
+        with mock.patch("kontor_cli.himalaya._run", return_value=expected):
+            result = read_message_body("42")
+        assert result == expected
+
+    def test_read_message_body_himalaya_error_propagates(self) -> None:
+        with mock.patch(
+            "kontor_cli.himalaya._run",
+            side_effect=HimalayaError("command failed: boom"),
+        ):
+            with pytest.raises(HimalayaError, match="command failed"):
+                read_message_body("42")
+
+
+class TestReadMessageId:
+    def test_read_message_id_header_parsed(self) -> None:
+        # Case-insensitive; strips angle brackets
+        output = "Message-Id: <abc123@mail.example.com>\n\nBody text here.\n"
+        with mock.patch("kontor_cli.himalaya._run", return_value=output) as p:
+            result = read_message_id("42", folder="INBOX")
+            p.assert_called_once_with(
+                [
+                    "message",
+                    "read",
+                    "42",
+                    "-f",
+                    "INBOX",
+                    "-H",
+                    "Message-Id",
+                    "--preview",
+                ],
+                cwd=None,
+            )
+        assert result == "abc123@mail.example.com"
+
+    def test_read_message_id_case_insensitive(self) -> None:
+        output = "message-id: <lower-case@example.com>\n\nBody.\n"
+        with mock.patch("kontor_cli.himalaya._run", return_value=output):
+            result = read_message_id("7")
+        assert result == "lower-case@example.com"
+
+    def test_read_message_id_absent_returns_none(self) -> None:
+        output = "Subject: hello\n\nBody only, no message-id header.\n"
+        with mock.patch("kontor_cli.himalaya._run", return_value=output):
+            result = read_message_id("99")
+        assert result is None
 
 
 class TestRunErrors:

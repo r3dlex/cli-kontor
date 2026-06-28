@@ -188,3 +188,143 @@ class TestCheckPrerequisites:
         mock_sock = mock.MagicMock()
         with mock.patch("socket.create_connection", return_value=mock_sock):
             cfg._check_davmail()  # should not raise
+
+
+class TestTriageAndAsanaConfig:
+    def test_loads_asana_and_triage_sections(self, tmp_path: Path) -> None:
+        import yaml
+
+        cfg_file = tmp_path / "config.yaml"
+        data = _minimal_config()
+        data["asana"] = {
+            "pat": "REPLACE_WITH_ASANA_PAT",
+            "workspace_gid": "12345678",
+            "project_gids": {
+                "information_gathering": "111",
+                "nudging": "222",
+                "being_the_example": "333",
+                "taking_decision": "444",
+            },
+        }
+        data["triage"] = {
+            "enabled": True,
+            "scan_rebuild": False,
+            "internal_domain": "rib-software.com",
+            "sender_tiers": {
+                "extremely_important": ["Rolf Helmes"],
+                "very_important": ["Arthur Berganski"],
+                "also_important": ["Helen Wiersma"],
+            },
+            "content_high_threshold": 0.6,
+        }
+        yaml.safe_dump(data, open(cfg_file, "w"))
+        cfg = Config.load(cfg_file)
+        assert cfg.asana_pat == "REPLACE_WITH_ASANA_PAT"
+        assert cfg.asana_workspace_gid == "12345678"
+        assert cfg.asana_project_gids["information_gathering"] == "111"
+        assert cfg.asana_project_gids["nudging"] == "222"
+        assert cfg.asana_project_gids["being_the_example"] == "333"
+        assert cfg.asana_project_gids["taking_decision"] == "444"
+        assert cfg.triage_enabled is True
+        assert cfg.triage_scan_rebuild is False
+        assert cfg.triage_internal_domain == "rib-software.com"
+        assert cfg.triage_sender_tiers["extremely_important"] == ["Rolf Helmes"]
+        assert cfg.triage_content_high_threshold == 0.6
+
+    def test_triage_disabled_no_asana_section_loads_fine(self, tmp_path: Path) -> None:
+        import yaml
+
+        cfg_file = tmp_path / "config.yaml"
+        data = _minimal_config()
+        # No asana section, triage.enabled is false (default)
+        yaml.safe_dump(data, open(cfg_file, "w"))
+        cfg = Config.load(cfg_file)
+        assert cfg.triage_enabled is False
+        assert cfg.asana_pat is None
+        assert cfg.asana_workspace_gid is None
+        assert cfg.asana_project_gids == {}
+
+    def test_triage_enabled_missing_asana_section_raises_config_error_naming_key(
+        self, tmp_path: Path
+    ) -> None:
+        import yaml
+
+        cfg_file = tmp_path / "config.yaml"
+        data = _minimal_config()
+        data["triage"] = {"enabled": True}
+        yaml.safe_dump(data, open(cfg_file, "w"))
+        with pytest.raises(ConfigError, match="asana"):
+            Config.load(cfg_file)
+
+    def test_triage_enabled_missing_workspace_gid_or_pat_raises(
+        self, tmp_path: Path
+    ) -> None:
+        import yaml
+
+        cfg_file = tmp_path / "config.yaml"
+        data = _minimal_config()
+        data["asana"] = {
+            "pat": "REPLACE_WITH_ASANA_PAT",
+            # workspace_gid is missing
+            "project_gids": {
+                "information_gathering": "111",
+                "nudging": "222",
+                "being_the_example": "333",
+                "taking_decision": "444",
+            },
+        }
+        data["triage"] = {"enabled": True}
+        yaml.safe_dump(data, open(cfg_file, "w"))
+        with pytest.raises(ConfigError, match="asana.workspace_gid"):
+            Config.load(cfg_file)
+
+    def test_triage_enabled_missing_pat_raises(self, tmp_path: Path) -> None:
+        import yaml
+
+        cfg_file = tmp_path / "config.yaml"
+        data = _minimal_config()
+        data["asana"] = {
+            # pat is missing
+            "workspace_gid": "12345678",
+            "project_gids": {
+                "information_gathering": "111",
+                "nudging": "222",
+                "being_the_example": "333",
+                "taking_decision": "444",
+            },
+        }
+        data["triage"] = {"enabled": True}
+        yaml.safe_dump(data, open(cfg_file, "w"))
+        with pytest.raises(ConfigError, match="asana.pat"):
+            Config.load(cfg_file)
+
+    def test_triage_enabled_missing_any_of_4_project_gids_raises_naming_key(
+        self, tmp_path: Path
+    ) -> None:
+        import yaml
+
+        missing_keys = [
+            "information_gathering",
+            "nudging",
+            "being_the_example",
+            "taking_decision",
+        ]
+        all_gids = {
+            "information_gathering": "111",
+            "nudging": "222",
+            "being_the_example": "333",
+            "taking_decision": "444",
+        }
+        for missing_key in missing_keys:
+            cfg_file = tmp_path / f"config_{missing_key}.yaml"
+            data = _minimal_config()
+            gids = {k: v for k, v in all_gids.items() if k != missing_key}
+            data["asana"] = {
+                "pat": "REPLACE_WITH_ASANA_PAT",
+                "workspace_gid": "12345678",
+                "project_gids": gids,
+            }
+            data["triage"] = {"enabled": True}
+            yaml.safe_dump(data, open(cfg_file, "w"))
+            with pytest.raises(ConfigError, match=missing_key):
+                Config.load(cfg_file)
