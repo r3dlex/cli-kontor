@@ -339,6 +339,42 @@ def _rules_freeze(cfg: Config, root: Path) -> None:
         sys.exit(1)
 
 
+@cli.command("md-to-docx")
+@click.argument("md_files", nargs=-1, required=True, type=click.Path(exists=True, path_type=Path))
+@click.option(
+    "--output-dir",
+    "output_dir",
+    type=click.Path(file_okay=False, path_type=Path),
+    default=None,
+    help="Directory to write .docx files into (default: same dir as each input file).",
+)
+def md_to_docx_cmd(md_files: tuple[Path, ...], output_dir: Path | None) -> None:
+    """Convert CS-intake Markdown templates to .docx files.
+
+    Accepts one or more .md file paths. Each file is converted to a .docx
+    placed next to the source file (or in OUTPUT_DIR when given).
+
+    Source provenance: r3dlex/rib-workspace scripts/md_to_docx.py @ 3e3d082
+    """
+    from kontor_cli.md_to_docx import convert  # noqa: PLC0415
+
+    if output_dir is not None:
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+    for md_file in md_files:
+        md_file = Path(md_file)
+        if output_dir is not None:
+            docx_path = output_dir / md_file.with_suffix(".docx").name
+        else:
+            docx_path = md_file.with_suffix(".docx")
+        try:
+            out = convert(md_file, docx_path)
+            click.echo(f"wrote {out}")
+        except Exception as exc:  # noqa: BLE001
+            click.echo(f"error converting {md_file}: {exc}", err=True)
+            sys.exit(1)
+
+
 def main() -> None:
     cli(obj={})
 
