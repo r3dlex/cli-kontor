@@ -117,6 +117,8 @@ class TestCliMdToDocx:
         out_dir = tmp_path / "output"
 
         runner = CliRunner()
-        result = runner.invoke(cli, ["md-to-docx", str(md), "--output-dir", str(out_dir)])
+        result = runner.invoke(
+            cli, ["md-to-docx", str(md), "--output-dir", str(out_dir)]
+        )
         assert result.exit_code == 0, result.output
         assert (out_dir / "src.docx").exists()

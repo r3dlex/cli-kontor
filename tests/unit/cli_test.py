@@ -156,9 +156,10 @@ class TestClassify:
             with mock.patch(
                 "kontor_cli.himalaya.list_emails", return_value=[mock_email]
             ):
-                with mock.patch("kontor_cli.rules_engine.RulesEngine") as mock_re:
-                    instance = mock_re.return_value
-                    instance.classify.return_value = "4_Info"
+                with mock.patch("kontor_cli.cli.Pipeline") as mock_pipeline:
+                    instance = mock_pipeline.return_value
+                    instance.classify_with_rules.return_value = "4_Info"
+                    instance.nl_rules = []
 
                     from click.testing import CliRunner
 

@@ -22,7 +22,7 @@ from kontor_cli.himalaya import (
     move_email,
     read_message_body,
 )
-from kontor_cli.rules_engine import RulesEngine
+from kontor_cli.rules import nl_rules, python_rules, yaml_dsl
 from kontor_cli.triage import Triage
 
 logger = logging.getLogger("kontor_cli.pipeline")
@@ -87,7 +87,10 @@ class Pipeline:
     def __init__(self, config: Config, cwd: Path | None = None) -> None:
         self.config = config
         self.cwd = cwd
-        self.rules_engine = RulesEngine(config, cwd)
+        # Rule sources, evaluated in priority order by classify_with_rules().
+        self.yaml_rules = yaml_dsl.load_rules_from_dir(config.rules_yaml_dir)
+        self.python_rules_ns = python_rules.load_python_rules(config.rules_python_file)
+        self.nl_rules = nl_rules.load_nl_rules(config.rules_nl_dir)
         self.classifier = Classifier(config)
         self.folder_policy = FolderPolicy(config.pipeline_archive_months)
         self.move_history: set[tuple[str, str]] = set()  # (email_id, folder)
@@ -133,9 +136,58 @@ class Pipeline:
             self._created_folders.add(folder)
             pass
 
+    def classify_with_rules(self, email: Email) -> str | None:
+        """Classify an email through all three rule sources.
+
+        Priority: YAML DSL > Python module > NL rules (best-effort).
+        NL rules return None — they require LLM context.
+        """
+        # 1. YAML DSL
+        yaml_result: str | None = yaml_dsl.evaluate_yaml_rules(
+            self.yaml_rules,
+            email.from_addr,
+            email.subject,
+        )
+        if yaml_result is not None:
+            logger.info(
+                "YAML rule matched",
+                extra={
+                    "email_id": email.id,
+                    "rule_source": "yaml_dsl",
+                    "folder": yaml_result,
+                },
+            )
+            return yaml_result
+
+        # 2. Python module
+        py_result: str | None = python_rules.call_python_rules(
+            self.python_rules_ns, email
+        )
+        if py_result is not None:
+            logger.info(
+                "Python rule matched",
+                extra={
+                    "email_id": email.id,
+                    "rule_source": "python_rules",
+                    "folder": py_result,
+                },
+            )
+            return py_result
+
+        # 3. NL rules — no direct match; requires LLM
+        if self.nl_rules:
+            logger.info(
+                "No YAML or Python match; NL rules available for LLM context",
+                extra={
+                    "email_id": email.id,
+                    "rule_source": "nl_rules",
+                },
+            )
+        return None
+
     def _classify(self, email: Email) -> str | None:
-        """Classify via the rules engine; fall back to the LLM when no rule matches."""
-        classified = self.rules_engine.classify(email)
+        """Classify via the rules; fall back to the LLM when no rule matches."""
+        classified = self.classify_with_rules(email)
         if classified is not None:
             return classified
         result = self._llm_classify(email)
@@ -241,7 +293,7 @@ class Pipeline:
 
     def _llm_classify(self, email: Email) -> ClassificationResult | None:
         """Classify via LLM with retry and failure tracking."""
-        nl_context = self.rules_engine.get_nl_context()
+        nl_context = nl_rules.nl_rules_context(self.nl_rules)
         result = self.classifier.classify(email, rules_context=nl_context)
         if result is None:
             self.llm_failures += 1
@@ -365,7 +417,7 @@ class HealPipeline(Pipeline):
 
             for email in emails:
                 total += 1
-                classified = self.rules_engine.classify(email)
+                classified = self.classify_with_rules(email)
                 target = self.folder_policy.target_for(email.date, classified)
 
                 # Violation: email should be in Archive (too old) but isn't
