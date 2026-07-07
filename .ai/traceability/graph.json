@@ -20,6 +20,13 @@
       "relation": "summarized-by",
       "source": "workflow:kontor-cli:init-ai-repo",
       "target": "handoff:kontor-cli:init-ai-repo"
+    },
+    {
+      "source": "plan:kontor-cli:northstar-inline-rules-engine-classify",
+      "target": "handoff:kontor-cli:northstar-inline-rules-engine-classify",
+      "relation": "summarized-by",
+      "created_by": "northstar",
+      "evidence_path": ".ai/handoff/northstar-inline-rules-engine-classify.md"
     }
   ],
   "generated_at": "2026-06-28T12:54:35Z",
@@ -67,8 +74,28 @@
       "status": "active",
       "title": "init-ai-repo handoff",
       "type": "handoff"
+    },
+    {
+      "id": "plan:kontor-cli:northstar-inline-rules-engine-classify",
+      "type": "plan",
+      "title": "northstar sliced plan: inline-rules-engine-classify",
+      "status": "active",
+      "repo_id": "kontor-cli",
+      "path": ".ai/handoff/northstar-inline-rules-engine-classify.md",
+      "backlinks": []
+    },
+    {
+      "id": "handoff:kontor-cli:northstar-inline-rules-engine-classify",
+      "type": "handoff",
+      "title": "northstar A->B handoff: inline-rules-engine-classify",
+      "status": "active",
+      "repo_id": "kontor-cli",
+      "path": ".ai/handoff/northstar-inline-rules-engine-classify.md",
+      "backlinks": [
+        "plan:kontor-cli:northstar-inline-rules-engine-classify"
+      ]
     }
   ],
   "root_repo_id": "kontor-cli",
-  "schema_version": "1.0"
+  "schema_version": "1.1"
 }
