@@ -19,7 +19,13 @@ from kontor_cli.config import (
 from kontor_cli.himalaya import list_emails, read_message_body
 from kontor_cli.logging_config import configure_logging
 from kontor_cli.mailbox_cleanup import restore_archive_projects
-from kontor_cli.pipeline import HealPipeline, RealtimePipeline, RebuildPipeline
+from kontor_cli.pipeline import (
+    HealPipeline,
+    Pipeline,
+    RealtimePipeline,
+    RebuildPipeline,
+)
+from kontor_cli.rules import nl_rules
 from kontor_cli.triage import Triage
 
 logger = logging.getLogger("kontor_cli")
@@ -108,11 +114,9 @@ def classify(
         click.echo(f"Email {email_id} not found in {folder}.", err=True)
         sys.exit(1)
 
-    from kontor_cli.rules_engine import RulesEngine
-
-    engine = RulesEngine(cfg)
-    result = engine.classify(email)
-    nl_context = engine.get_nl_context()
+    pipeline = Pipeline(cfg)
+    result = pipeline.classify_with_rules(email)
+    nl_context = nl_rules.nl_rules_context(pipeline.nl_rules)
 
     from kontor_cli.folders import FolderPolicy
 
@@ -340,7 +344,9 @@ def _rules_freeze(cfg: Config, root: Path) -> None:
 
 
 @cli.command("md-to-docx")
-@click.argument("md_files", nargs=-1, required=True, type=click.Path(exists=True, path_type=Path))
+@click.argument(
+    "md_files", nargs=-1, required=True, type=click.Path(exists=True, path_type=Path)
+)
 @click.option(
     "--output-dir",
     "output_dir",

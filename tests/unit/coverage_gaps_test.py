@@ -20,7 +20,6 @@ import yaml
 from kontor_cli.classifier import Classifier
 from kontor_cli.himalaya import Email, HimalayaError
 from kontor_cli.rules import nl_rules, python_rules, yaml_dsl
-from kontor_cli.rules_engine import RulesEngine
 
 
 def _email(
@@ -371,11 +370,23 @@ class TestYamlDslGaps:
 
 
 # ---------------------------------------------------------------------------
-# rules_engine.py gaps: 54-62, 66
+# pipeline.py rules-evaluation gaps (formerly rules_engine.py: 54-62, 66)
 # ---------------------------------------------------------------------------
 
 
-class TestRulesEngineGaps:
+def _rules_pipeline(tmp_path: Path):  # type: ignore[no-untyped-def]
+    """Pipeline whose rule sources all load from tmp_path (triage disabled)."""
+    from kontor_cli.pipeline import Pipeline
+
+    cfg = mock.MagicMock()
+    cfg.rules_yaml_dir = tmp_path
+    cfg.rules_python_file = tmp_path / "rules.py"
+    cfg.rules_nl_dir = tmp_path
+    cfg.triage_enabled = False
+    return Pipeline(cfg, cwd=tmp_path)
+
+
+class TestPipelineRulesGaps:
     def test_python_rule_matched_logged(self, tmp_path: Path) -> None:
         """When YAML misses and Python hits, the 'Python rule matched' branch fires."""
         # YAML rules dir is empty (no rules)
@@ -387,13 +398,8 @@ class TestRulesEngineGaps:
         # NL rules present (used by later path)
         (tmp_path / "guidelines.rules.txt").write_text("NL rule text")
 
-        cfg = mock.MagicMock()
-        cfg.rules_yaml_dir = tmp_path
-        cfg.rules_python_file = tmp_path / "rules.py"
-        cfg.rules_nl_dir = tmp_path
-
-        engine = RulesEngine(cfg, cwd=tmp_path)
-        result = engine.classify(_email())
+        p = _rules_pipeline(tmp_path)
+        result = p.classify_with_rules(_email())
         assert result == "2_Projects/PRJ_Py"
 
     def test_nl_rules_only_logs_no_direct_match(self, tmp_path: Path) -> None:
@@ -402,17 +408,12 @@ class TestRulesEngineGaps:
         (tmp_path / "rules.py").write_text("# no classify fn")
         (tmp_path / "guidelines.rules.txt").write_text("Always escalate sales leads")
 
-        cfg = mock.MagicMock()
-        cfg.rules_yaml_dir = tmp_path
-        cfg.rules_python_file = tmp_path / "rules.py"
-        cfg.rules_nl_dir = tmp_path
-
-        engine = RulesEngine(cfg, cwd=tmp_path)
-        result = engine.classify(_email())
+        p = _rules_pipeline(tmp_path)
+        result = p.classify_with_rules(_email())
         assert result is None
         # NL rules are loaded
-        assert engine.nl_rules
-        assert "Always escalate sales leads" in engine.get_nl_context()
+        assert p.nl_rules
+        assert "Always escalate sales leads" in nl_rules.nl_rules_context(p.nl_rules)
 
 
 # ---------------------------------------------------------------------------
@@ -536,8 +537,7 @@ class TestPipelineGaps:
             mock.patch("kontor_cli.pipeline.create_folder"),
         ):
             p = RebuildPipeline(MockConfig(), cwd=tmp_path)
-            p.rules_engine.classify = lambda e: "4_Info"
-            p.rules_engine.get_nl_context = lambda: ""
+            p.classify_with_rules = lambda e: "4_Info"
             result = p.run(dry_run=True)
 
         assert result["phase"] == "rebuild"
@@ -555,8 +555,7 @@ class TestPipelineGaps:
             mock.patch("kontor_cli.pipeline.create_folder"),
         ):
             p = HealPipeline(MockConfig(), cwd=tmp_path)
-            p.rules_engine.classify = lambda e: "2_Projects/PRJ_Test"
-            p.rules_engine.get_nl_context = lambda: ""
+            p.classify_with_rules = lambda e: "2_Projects/PRJ_Test"
             result = p.run(dry_run=False)
 
         assert result["violations_found"] >= 1

@@ -54,9 +54,8 @@ class TestRebuildPipeline:
                         from kontor_cli.pipeline import RebuildPipeline
 
                         pipeline = RebuildPipeline(MockConfig(), cwd=tmp_path)
-                        # Override rules_engine classify with our mock
-                        pipeline.rules_engine.classify = lambda e: "2_Projects/PRJ_Test"
-                        pipeline.rules_engine.get_nl_context = lambda: ""
+                        # Override rules classify with our mock
+                        pipeline.classify_with_rules = lambda e: "2_Projects/PRJ_Test"
                         result = pipeline.run(dry_run=False)
 
         assert result["phase"] == "rebuild"
@@ -72,8 +71,7 @@ class TestRebuildPipeline:
                         from kontor_cli.pipeline import RebuildPipeline
 
                         pipeline = RebuildPipeline(MockConfig(), cwd=tmp_path)
-                        pipeline.rules_engine.classify = lambda e: "2_Projects/PRJ_Test"
-                        pipeline.rules_engine.get_nl_context = lambda: ""
+                        pipeline.classify_with_rules = lambda e: "2_Projects/PRJ_Test"
                         pipeline.run(dry_run=False)
 
         assert mock_move.call_count == 1
@@ -90,8 +88,7 @@ class TestRealtimePipeline:
                         from kontor_cli.pipeline import RealtimePipeline
 
                         pipeline = RealtimePipeline(MockConfig(), cwd=tmp_path)
-                        pipeline.rules_engine.classify = lambda e: "4_Info"
-                        pipeline.rules_engine.get_nl_context = lambda: ""
+                        pipeline.classify_with_rules = lambda e: "4_Info"
                         result = pipeline.run(dry_run=False)
 
         assert result["phase"] == "realtime"
@@ -169,8 +166,7 @@ class TestProcessEmail:
         from kontor_cli.pipeline import Pipeline
 
         p = Pipeline(MockConfig(), cwd=tmp_path)
-        p.rules_engine.classify = lambda e: None  # no rule match
-        p.rules_engine.get_nl_context = lambda: ""
+        p.classify_with_rules = lambda e: None  # no rule match
         # Mock classifier to return a folder
         p.classifier.classify = mock.MagicMock(
             return_value=mock.MagicMock(
@@ -192,8 +188,7 @@ class TestProcessEmail:
         from kontor_cli.pipeline import Pipeline
 
         p = Pipeline(MockConfig(), cwd=tmp_path)
-        p.rules_engine.classify = lambda e: None
-        p.rules_engine.get_nl_context = lambda: ""
+        p.classify_with_rules = lambda e: None
         p.classifier.classify = mock.MagicMock(return_value=None)  # LLM fails
 
         email = _email("1", "INBOX")
@@ -211,8 +206,7 @@ class TestProcessEmail:
         from kontor_cli.pipeline import Pipeline
 
         p = Pipeline(MockConfig(), cwd=tmp_path)
-        p.rules_engine.classify = lambda e: "INBOX"  # current == target
-        p.rules_engine.get_nl_context = lambda: ""
+        p.classify_with_rules = lambda e: "INBOX"  # current == target
 
         email = _email("1", "INBOX")
         with mock.patch("kontor_cli.pipeline.move_email") as mock_move:
@@ -226,8 +220,7 @@ class TestProcessEmail:
         from kontor_cli.pipeline import Pipeline
 
         p = Pipeline(MockConfig(), cwd=tmp_path)
-        p.rules_engine.classify = lambda e: "2_Projects/PRJ_Test"
-        p.rules_engine.get_nl_context = lambda: ""
+        p.classify_with_rules = lambda e: "2_Projects/PRJ_Test"
 
         email = _email("1", "INBOX")
         with mock.patch("kontor_cli.pipeline.move_email") as mock_move:
@@ -241,8 +234,7 @@ class TestProcessEmail:
         from kontor_cli.pipeline import Pipeline
 
         p = Pipeline(MockConfig(), cwd=tmp_path)
-        p.rules_engine.classify = lambda e: "2_Projects/PRJ_Test"
-        p.rules_engine.get_nl_context = lambda: ""
+        p.classify_with_rules = lambda e: "2_Projects/PRJ_Test"
 
         email = _email("1", "INBOX")
         with mock.patch("kontor_cli.pipeline.move_email"):
@@ -256,8 +248,7 @@ class TestProcessEmail:
         from kontor_cli.pipeline import HimalayaError, Pipeline
 
         p = Pipeline(MockConfig(), cwd=tmp_path)
-        p.rules_engine.classify = lambda e: "2_Projects/PRJ_Test"
-        p.rules_engine.get_nl_context = lambda: ""
+        p.classify_with_rules = lambda e: "2_Projects/PRJ_Test"
 
         email = _email("1", "INBOX")
         err = HimalayaError("Folder not found in Exchange")
@@ -272,8 +263,7 @@ class TestProcessEmail:
         from kontor_cli.pipeline import HimalayaError, Pipeline
 
         p = Pipeline(MockConfig(), cwd=tmp_path)
-        p.rules_engine.classify = lambda e: "2_Projects/PRJ_Test"
-        p.rules_engine.get_nl_context = lambda: ""
+        p.classify_with_rules = lambda e: "2_Projects/PRJ_Test"
 
         email = _email("1", "INBOX")
         err = HimalayaError("connection timeout")
@@ -381,8 +371,7 @@ class TestTriageIntegration:
             fake_triage.asana = mock.MagicMock()
             fake_triage.maybe_create_task.return_value = _decision("created")
             p = cls(cfg, cwd=tmp_path)
-        p.rules_engine.classify = lambda e: "2_Projects/PRJ_Test"
-        p.rules_engine.get_nl_context = lambda: ""
+        p.classify_with_rules = lambda e: "2_Projects/PRJ_Test"
         return p
 
     def test_triage_fires_from_classification_even_when_move_email_raises(
@@ -406,8 +395,7 @@ class TestTriageIntegration:
 
         p = RealtimePipeline(MockConfig(), cwd=tmp_path)
         assert p.triage is None
-        p.rules_engine.classify = lambda e: "2_Projects/PRJ_Test"
-        p.rules_engine.get_nl_context = lambda: ""
+        p.classify_with_rules = lambda e: "2_Projects/PRJ_Test"
         email = _email("1", "INBOX")
         with mock.patch("kontor_cli.pipeline.move_email"):
             with mock.patch("kontor_cli.pipeline.create_folder"):
@@ -532,8 +520,7 @@ class TestHealPipelineViolationPaths:
             mock.patch("kontor_cli.pipeline.create_folder"),
         ):
             p = HealPipeline(MockConfig(), cwd=tmp_path)
-            p.rules_engine.classify = lambda e: "2_Projects/PRJ_Test"
-            p.rules_engine.get_nl_context = lambda: ""
+            p.classify_with_rules = lambda e: "2_Projects/PRJ_Test"
             result = p.run(dry_run=False)
 
         assert result["phase"] == "heal"
@@ -552,10 +539,36 @@ class TestHealPipelineViolationPaths:
             mock.patch("kontor_cli.pipeline.create_folder"),
         ):
             p = HealPipeline(MockConfig(), cwd=tmp_path)
-            p.rules_engine.classify = lambda e: "2_Projects/PRJ_Test"
-            p.rules_engine.get_nl_context = lambda: ""
+            p.classify_with_rules = lambda e: "2_Projects/PRJ_Test"
             result = p.run(dry_run=True)
 
         assert result["violations_found"] >= 1
         # dry_run=True, so no fixes
         assert result["violations_fixed"] == 0
+
+
+class TestClassifyWithRules:
+    def test_rules_priority_order(self, tmp_path: Path) -> None:
+        """YAML DSL should take priority over the Python rules module."""
+        import yaml
+
+        from kontor_cli.pipeline import Pipeline
+
+        # YAML DSL rule
+        (tmp_path / "rules.yaml").write_text(
+            yaml.safe_dump([{"from": "1@example.com", "folder": "YAML_Folder"}])
+        )
+        # Python rule (should not fire because YAML matched first)
+        (tmp_path / "rules.py").write_text(
+            "def classify(email):\n    return 'Python_Folder'\n"
+        )
+        (tmp_path / "guidelines.rules.txt").write_text("NL rule")
+
+        cfg = MockConfig()
+        cfg.rules_yaml_dir = tmp_path
+        cfg.rules_python_file = tmp_path / "rules.py"
+        cfg.rules_nl_dir = tmp_path
+
+        p = Pipeline(cfg, cwd=tmp_path)
+        # _email("1", ...) has from_addr "1@example.com" — matches the YAML rule
+        assert p.classify_with_rules(_email("1", "INBOX")) == "YAML_Folder"

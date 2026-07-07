@@ -1,16 +1,14 @@
-"""Unit tests for kontor_cli.rules_engine."""
+"""Unit tests for the kontor_cli.rules loaders (YAML DSL, Python, NL)."""
 
 from __future__ import annotations
 
 from datetime import UTC, datetime
 from pathlib import Path
-from unittest import mock
 
 import yaml
 
 from kontor_cli.himalaya import Email
 from kontor_cli.rules import nl_rules, python_rules, yaml_dsl
-from kontor_cli.rules_engine import RulesEngine
 
 
 def _email(from_addr: str = "alice@example.com", subject: str = "Test") -> Email:
@@ -91,28 +89,9 @@ class TestNlRules:
         assert ctx.startswith("- Rule 1")
 
 
-class TestRulesEngine:
-    def test_rules_priority_order(self, tmp_path: Path) -> None:
-        """YAML DSL should take priority over Python module."""
-        # YAML DSL rule
-        yaml_file = tmp_path / "rules.yaml"
-        with open(yaml_file, "w") as fh:
-            yaml.safe_dump([{"from": "alice@example.com", "folder": "YAML_Folder"}], fh)
-        # Python rule (should not fire because YAML matched first)
-        rules_file = tmp_path / "rules.py"
-        rules_file.write_text("def classify(email):\n    return 'Python_Folder'\n")
-        nl_file = tmp_path / "guidelines.rules.txt"
-        nl_file.write_text("NL rule")
-
-        cfg = mock.MagicMock()
-        cfg.rules_yaml_dir = tmp_path
-        cfg.rules_python_file = rules_file
-        cfg.rules_nl_dir = tmp_path
-
-        engine = RulesEngine(cfg, cwd=tmp_path)
-        result = engine.classify(_email())
-        # YAML matched first
-        assert result == "YAML_Folder"
+# The rules priority-order test (YAML DSL > Python module) moved to
+# tests/unit/pipeline_test.py::TestClassifyWithRules, since the classify
+# sequence now lives in the Pipeline.
 
 
 # ---------------------------------------------------------------------------

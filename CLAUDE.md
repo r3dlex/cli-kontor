@@ -11,8 +11,7 @@ Autonomous email management CLI for a work mailbox using **himalaya** + **DavMai
 | `src/kontor_cli/himalaya.py` | himalaya CLI wrapper |
 | `src/kontor_cli/folders.py` | Folder taxonomy + archive enforcement |
 | `src/kontor_cli/classifier.py` | OpenAI-compatible LLM classifier |
-| `src/kontor_cli/pipeline.py` | Rebuild / Realtime / Heal pipelines |
-| `src/kontor_cli/rules_engine.py` | Unified rules evaluation |
+| `src/kontor_cli/pipeline.py` | Rebuild / Realtime / Heal pipelines + rules evaluation |
 | `src/kontor_cli/rules/` | YAML DSL, Python, NL rule loaders |
 
 ## Commands
