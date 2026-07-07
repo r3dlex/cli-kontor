@@ -18,10 +18,10 @@ from typing import Any
 # ---------------------------------------------------------------------------
 
 _INLINE = re.compile(
-    r"(\*\*.+?\*\*)"    # bold
-    r"|(`[^`]+?`)"       # inline code
-    r"|(\[\[.+?\]\])"   # wikilink
-    r"|(_[^_]+?_)"       # italic (underscore)
+    r"(\*\*.+?\*\*)"  # bold
+    r"|(`[^`]+?`)"  # inline code
+    r"|(\[\[.+?\]\])"  # wikilink
+    r"|(_[^_]+?_)"  # italic (underscore)
 )
 
 
@@ -78,6 +78,7 @@ def fill_cell(cell: Any, text: str, *, header: bool = False) -> None:
 # Low-level docx helpers
 # ---------------------------------------------------------------------------
 
+
 def shade(cell: Any, hex_color: str) -> None:
     from docx.oxml import OxmlElement  # noqa: PLC0415
     from docx.oxml.ns import qn  # noqa: PLC0415
@@ -109,6 +110,7 @@ def horizontal_rule(doc: Any) -> None:
 # ---------------------------------------------------------------------------
 # Block parsing
 # ---------------------------------------------------------------------------
+
 
 def strip_frontmatter(lines: list[str]) -> list[str]:
     if lines and lines[0].strip() == "---":
@@ -175,9 +177,7 @@ def convert(md_path: str | Path, docx_path: str | Path) -> Path:
     from docx import Document  # noqa: PLC0415
     from docx.shared import Pt  # noqa: PLC0415
 
-    lines = strip_frontmatter(
-        Path(md_path).read_text(encoding="utf-8").splitlines()
-    )
+    lines = strip_frontmatter(Path(md_path).read_text(encoding="utf-8").splitlines())
     doc = Document()
     doc.styles["Normal"].font.name = "Calibri"
     doc.styles["Normal"].font.size = Pt(11)
