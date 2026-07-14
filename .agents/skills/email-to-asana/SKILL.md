@@ -169,8 +169,8 @@ asana:
 ```yaml
 triage:
   enabled: false                                    # Enable/disable triage
-  scan_rebuild: false                               # Opt-in rebuild-phase triage
   internal_domain: "rib-software.com"               # Internal domain (for customer check)
+  owner_email: "you@rib-software.com"               # Person whose action is required
   content_high_threshold: 0.6                       # Escalation signal threshold (0..1)
   sender_tiers:
     extremely_important:
@@ -188,9 +188,10 @@ triage:
 ```
 
 **Notes:**
-- `scan_rebuild`: defaults to `false`; set to `true` to enable triage during the rebuild phase (scanning archive + old inbox)
+- `owner_email`: printed with every candidate so the agent can apply the owner-input precision rule
 - `sender_tiers`: each tier is a list of name or email substrings (case-insensitive match)
 - `content_high_threshold`: tuned empirically; 0.6 is a reasonable starting point
+- `process` phases never invoke triage; candidate listing is only through the explicit `triage` command
 
 ## Operating Procedure (Agent-in-the-Loop)
 
@@ -201,8 +202,9 @@ kontor-cli triage [--folder INBOX]
 ```
 
 This runs the deterministic eligibility gate and prints each qualifying email
-(id, sender, subject, reason) **followed by its fetched body**. It is
-read-only: no Asana writes, no mailbox mutation.
+(id, sender, subject, reason, `canonical_folder`, `decisive_prior`, configured
+owner) **followed by its fetched body**. It is read-only: no Asana writes, no
+mailbox mutation.
 
 ### Step 2 — Classify each candidate (the agent's job)
 

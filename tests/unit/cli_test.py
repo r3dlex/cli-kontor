@@ -240,6 +240,35 @@ class TestProcess:
                 assert result.exit_code == 0
                 assert "rebuild" in result.output
 
+    def test_process_never_invokes_triage_or_asana(self) -> None:
+        from click.testing import CliRunner
+
+        from kontor_cli.cli import cli
+        from kontor_cli.config import Config
+
+        mock_cfg = mock.MagicMock(spec=Config)
+        mock_cfg.triage_enabled = True
+
+        with mock.patch("kontor_cli.cli.Config.load", return_value=mock_cfg):
+            with mock.patch("kontor_cli.cli.RealtimePipeline") as mock_pipeline:
+                mock_pipeline.return_value.run.return_value = {
+                    "phase": "realtime",
+                    "total_processed": 0,
+                }
+                with mock.patch("kontor_cli.cli.Triage") as mock_triage:
+                    with mock.patch(
+                        "kontor_cli.asana_client.AsanaClient.create_task"
+                    ) as mock_create:
+                        result = CliRunner().invoke(
+                            cli,
+                            ["process", "--phase", "realtime", "--dry-run"],
+                            catch_exceptions=False,
+                        )
+
+        assert result.exit_code == 0, result.output
+        mock_triage.assert_not_called()
+        mock_create.assert_not_called()
+
 
 class TestClassifyRecommend:
     def test_classify_recommend_requires_no_llm_api_key(self, tmp_path: Path) -> None:
@@ -358,7 +387,8 @@ class TestTriage:
             subject="Urgent: blocker on go-live",
             body="Please decide before Friday.",
             reason="external customer sender",
-            decisive_prior=False,
+            decisive_prior=True,
+            canonical_folder="2_Projects/PRJ_Willemen",
         )
 
     def _make_email(self) -> object:
@@ -383,6 +413,7 @@ class TestTriage:
 
         mock_cfg = mock.MagicMock(spec=Config)
         mock_cfg.triage_enabled = True
+        mock_cfg.triage_owner_email = "owner@example.com"
         candidate = self._make_candidate()
 
         with mock.patch("kontor_cli.cli.Config.load", return_value=mock_cfg):
@@ -399,6 +430,9 @@ class TestTriage:
         assert "Urgent: blocker on go-live" in result.output
         assert "external customer sender" in result.output
         assert "Please decide before Friday." in result.output
+        assert "canonical_folder=2_Projects/PRJ_Willemen" in result.output
+        assert "decisive_prior=true" in result.output
+        assert "owner=owner@example.com" in result.output
         instance.list_candidates.assert_called_once()
 
     def test_triage_never_calls_asana_write(self) -> None:
@@ -633,6 +667,38 @@ class TestTriageCreate:
         passed_decision = instance.create_task_for.call_args.args[1]
         assert passed_decision.category == "nudging"
         assert passed_decision.deadline == date(2026, 7, 15)
+
+    def test_invalid_deadline_fails_cleanly_before_mailbox_access(self) -> None:
+        from click.testing import CliRunner
+
+        from kontor_cli.cli import cli
+        from kontor_cli.config import Config
+
+        mock_cfg = mock.MagicMock(spec=Config)
+        mock_cfg.triage_enabled = True
+
+        with mock.patch("kontor_cli.cli.Config.load", return_value=mock_cfg):
+            with mock.patch("kontor_cli.cli.list_emails") as mock_list:
+                runner = CliRunner()
+                result = runner.invoke(
+                    cli,
+                    [
+                        "triage-create",
+                        "--email-id",
+                        "99",
+                        "--category",
+                        "nudging",
+                        "--deadline",
+                        "not-a-date",
+                    ],
+                    catch_exceptions=False,
+                )
+
+        assert result.exit_code == 2
+        assert "Invalid value for --deadline" in result.output
+        assert "YYYY-MM-DD" in result.output
+        assert "Traceback" not in result.output
+        mock_list.assert_not_called()
 
     def test_email_not_found_exits_1(self) -> None:
         from click.testing import CliRunner

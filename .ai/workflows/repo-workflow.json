@@ -16,6 +16,11 @@
       "id": "northstar-handoff-inline-rules-engine-classify",
       "enabled_when": "northstar_handoff_present",
       "status": "available"
+    },
+    {
+      "id": "northstar-handoff-agent-supplied-email-triage",
+      "enabled_when": "northstar_handoff_present",
+      "status": "available"
     }
   ],
   "phases": [

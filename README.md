@@ -45,10 +45,11 @@ Config OK — all prerequisites satisfied.
 
 The dry run emits JSON log records such as `[DRY-RUN] Would move email ...` and
 ends with `Phase 'realtime' complete: {...}`. No mailbox message is moved and no
-Asana task is created during a dry run. Even during a dry run, fallback
+Asana task is created during a dry run. Even during a process dry run, fallback
 classification sends the email's sender, subject, and date to the configured LLM.
-When optional triage is enabled and selects a message for evaluation, it sends
-the full message body to the configured LLM; only the Asana write is suppressed.
+Optional triage is separate and agent-driven: `triage` reads candidate bodies
+locally and prints them for the agent; it does not call the configured LLM or
+write to Asana. Only `triage-create --no-dry-run` can write an Asana task.
 Classification can also write local decision logs under `rules/evolved/`. Those
 logs include the email ID, subject, and sender. They are gitignored, but treat
 these files as sensitive: restrict access, retain them only for an active review
@@ -57,7 +58,8 @@ or audit need, and delete them locally when that review or audit need ends.
 ## Safety Model
 
 - Preview first: `dry-run --phase ...` and `process --phase ... --dry-run` use
-  the same pipeline while suppressing mailbox moves and Asana writes.
+  the same mailbox pipeline while suppressing mailbox moves. The process
+  commands never invoke triage or Asana.
 - Process commands mutate the mailbox by moving messages. They never delete
   messages; `delete_email()` always raises `DeleteNotSupportedError`.
 - `classify` evaluates deterministic YAML and Python rules only; it does not
@@ -83,7 +85,8 @@ Useful read-only or guarded commands:
 
 ```bash
 uv run kontor-cli classify --email-id <id>  # Print one message's target folder
-uv run kontor-cli triage                     # Preview email-to-Asana decisions
+uv run kontor-cli triage                     # List agent-triage candidates and context
+uv run kontor-cli triage-create --email-id <id> --category nudging  # Preview a task
 uv run kontor-cli dry-run --phase rebuild   # Preview the broad historical pass
 uv run kontor-cli dry-run --phase heal      # Preview invariant repairs
 uv run kontor-cli process --phase heal --rules-freeze
@@ -95,6 +98,19 @@ they do not discover arbitrary valid taxonomy folders. In particular, a valid
 
 `--rules-freeze` writes a timestamped snapshot of evolved-rule metadata before
 the heal run. Use it when a reviewed heal run should retain that audit point.
+
+### Agent-driven Asana triage
+
+Enable `triage.enabled`, configure `triage.owner_email`, and provide the Asana
+workspace and four category project GIDs shown in `config.example.yaml`.
+`triage` is read-only and prints each candidate's body, eligibility reason,
+canonical folder, decisive-sender hint, and configured owner. The agent should
+create a task only when the message requires that owner's input or action.
+
+`triage-create` defaults to a no-write preview. Pass `--deadline YYYY-MM-DD`
+when the message supplies a due date; malformed dates fail before mailbox
+access. Pass `--no-dry-run` only after reviewing the preview to perform the
+idempotent Asana write. Neither triage command moves or deletes email.
 
 ## Update and Rerun
 

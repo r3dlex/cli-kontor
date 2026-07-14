@@ -299,6 +299,9 @@ def triage_cmd(folder: str, config_path: Path | None) -> None:
         click.echo(
             f"{candidate.email_id}  from={sender}  subject={candidate.subject}"
             f"  reason={candidate.reason}"
+            f"  canonical_folder={candidate.canonical_folder or '-'}"
+            f"  decisive_prior={str(candidate.decisive_prior).lower()}"
+            f"  owner={cfg.triage_owner_email or '-'}"
         )
         click.echo(f"  body:\n{candidate.body}\n")
 
@@ -359,6 +362,13 @@ def triage_create_cmd(
         click.echo("Triage is disabled (set triage.enabled: true).", err=True)
         sys.exit(1)
 
+    try:
+        parsed_deadline = date.fromisoformat(deadline) if deadline else None
+    except ValueError as exc:
+        raise click.BadParameter(
+            "must use YYYY-MM-DD", param_hint="--deadline"
+        ) from exc
+
     root = (config_path or Path.cwd() / "config.yaml").parent
     emails = list_emails(folder, cwd=root)
     email = next((e for e in emails if e.id == email_id), None)
@@ -366,7 +376,6 @@ def triage_create_cmd(
         click.echo(f"Email {email_id} not found in {folder}.", err=True)
         sys.exit(1)
 
-    parsed_deadline = date.fromisoformat(deadline) if deadline else None
     decision = CategoryDecision(
         category=category,
         deadline=parsed_deadline,

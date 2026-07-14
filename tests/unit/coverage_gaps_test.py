@@ -370,7 +370,7 @@ class TestYamlDslGaps:
 
 
 # ---------------------------------------------------------------------------
-# pipeline.py rules-evaluation gaps (formerly rules_engine.py: 54-62, 66)
+# pipeline.py inline rules-evaluation gaps
 # ---------------------------------------------------------------------------
 
 
