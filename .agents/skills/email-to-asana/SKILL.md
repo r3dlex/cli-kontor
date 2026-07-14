@@ -7,16 +7,14 @@ description: Filter important RIB emails and create Asana action items classifie
 
 ## Purpose
 
-**email-to-asana** automatically triages incoming emails into one of four management-action categories, creates idempotent Asana tasks, and extracts target dates from email context. The triage engine combines deterministic importance scoring (sender tiers + customer status + content signals) with a single LLM call to categorize each email and identify deadlines.
+**email-to-asana** triages incoming emails into one of four management-action categories, creates idempotent Asana tasks, and extracts target dates from email context. The triage engine handles the deterministic importance scoring (sender tiers + customer status + content signals); **the agent (you) reads the qualifying emails and supplies the category + deadline**. No LLM API key is configured for triage.
 
-The skill:
-1. Scores each email's importance via sender membership, customer domain checks, and escalation-signal keywords
-2. Fetches email bodies for qualifying messages (recall-biased: always fetch for listed senders or customers, over-fetch the rest)
-3. Passes qualifying emails to an LLM for category classification + deadline extraction
-4. Creates one Asana task per email (idempotent, dedup-scoped to the target project)
-5. Reports preview decisions (dry-run) or committed task creation (with full error handling)
-
-All per-email errors (LLM timeouts, Asana API failures, date parsing) are caught and logged; they do not propagate and do not prevent processing of subsequent emails.
+The skill, in agent-in-the-loop form:
+1. The CLI scores each email's importance via sender membership, customer domain checks, and escalation-signal keywords
+2. The CLI fetches email bodies for qualifying messages (recall-biased: always fetch for listed senders or customers, over-fetch the rest) and surfaces them as candidates
+3. **The agent reads each candidate's body and classifies it** into one of the four categories (+ optional deadline)
+4. The CLI creates one Asana task per agent-classified email (idempotent, dedup-scoped to the target project)
+5. The CLI reports an offline preview decision (dry-run) or committed task creation; real-write Asana failures exit nonzero
 
 ## The 4 Categories & Their Asana Projects
 
@@ -100,26 +98,47 @@ Tier members are matched by case-insensitive substring (name or email address).
 
 ### Boosts
 
-- **Customer boost:** Any sender from an external domain (not `internal_domain`) is treated as a customer and always qualifies
-- **Escalation boost:** Content containing 2+ signal keywords (urgency, decision, approval, blocker, deadline, etc.) elevates the email for review
+- **Customer boost:** A sender from an external (non-`internal_domain`) domain is treated as a customer — but only qualifies **with content signal** (a bare external sender no longer auto-qualifies).
+- **Escalation boost:** Content with high-signal keywords (urgency, decision, approval, blocker, deadline, etc.) elevates the email for review.
 
-### Eligibility Gate
+### Exclusion Rule (automated / notification senders)
 
-An email qualifies for triage when **any** of the following are true:
+Automated and notification senders **never** produce a task, even with signal words. Two layers:
 
-1. Sender is in extremely/very tier **AND** content has actionable signal (score > 0)
-2. Sender is in also tier **AND** content is strong (score >= content_high_threshold, default 0.6)
-3. Sender is a customer (external domain)
+- **`is_automated()` heuristic** — local-part markers (`no-reply`, `noreply`, `notifications`, `mailer`, `digest`, `*report*`, `office365reports`, …) and domain markers (`*.mail.microsoft`, `engage.mail`, `updates.*`, `mailchimp`, `sendgrid`, …).
+- **`triage.exclude_senders`** config list — site-specific substrings (name or address): notifications, daily digests, Google, Miro, Office365 reports, Teams, Azure, etc.
+
+### Eligibility Gate (recall)
+
+The deterministic gate is a **recall net** — it surfaces *candidates*, it does not decide task creation. An email is a candidate when it is **not excluded** AND **any** of:
+
+1. Sender in extremely/very tier **AND** content has actionable signal (score > 0)
+2. Sender in also tier **AND** content is strong (score >= content_high_threshold, default 0.6)
+3. Sender is a customer (external domain) **AND** content has signal (score > 0)
 4. Content has high-signal escalation keywords (score >= content_high_threshold)
+
+### Owner-Input Precision Rule (the agent's decision) — IMPORTANT
+
+Being from an important sender is **NOT** sufficient to create a task. Create a task **only if the email genuinely requires the owner's (`triage.owner_email`, e.g. andre.burgstahler@rib-software.com) personal input or action** — a decision, review, approval, or answer that *they* must give.
+
+- ✅ Create: "@Andre, could you review and approve…", "please advise/decide", a direct question to the owner, an approval/review the owner must perform.
+- ❌ Skip (no task): FYI, CC-only, status updates, someone *else's* "approved"/"thanks" reply, completed actions, newsletters — even from extremely_important senders.
+
+The deterministic gate cannot see this; **you must**. Read the body and decide before calling `triage-create`.
+
+### Canonical-Structure Context
+
+Each candidate carries `canonical_folder` — the email's placement in the canonical taxonomy from the deterministic rules engine (e.g. `2_Projects/PRJ_Willemen`, `1_Management/AI`). Use it as context when judging the category (e.g. a customer-project blocker needing sign-off → `taking_decision`).
 
 ### Body Fetch (Recall-Biased)
 
-- **Always fetch** for: listed senders (any tier), customers
-- **Over-fetch** the rest: broad subject pre-scan for signal keywords; declined fetches are logged at DEBUG level
+- **Always fetch** for: listed senders (any tier).
+- **Excluded senders:** body fetch is skipped (logged at DEBUG).
+- **Over-fetch** the rest: customers and broad subject pre-scan for signal keywords; declined fetches logged at DEBUG.
 
 ### Decisive-Sender Bias
 
-Senders in the `very_important` tier receive a soft bias (instruction to the LLM, not a hard rule) toward the `taking_decision` category when the email genuinely contains a decision point.
+Candidates from senders in the `very_important` tier carry `decisive_prior=True`. A soft hint (not a hard rule): favor `taking_decision` when the email genuinely contains a decision point — but still apply the Owner-Input Precision Rule first.
 
 ## Configuration
 
@@ -141,15 +160,15 @@ asana:
 **Notes:**
 - The PAT is never committed; it lives in the gitignored `config.yaml`
 - All four projects must already exist in Asana (validate-only; never auto-created)
-- One task is created in exactly one project (the LLM-selected category)
+- One task is created in exactly one project (the agent-selected category)
 
 ### `triage:` section (optional, disabled by default)
 
 ```yaml
 triage:
   enabled: false                                    # Enable/disable triage
-  scan_rebuild: false                               # Opt-in rebuild-phase triage
   internal_domain: "rib-software.com"               # Internal domain (for customer check)
+  owner_email: "you@rib-software.com"               # Person whose action is required
   content_high_threshold: 0.6                       # Escalation signal threshold (0..1)
   sender_tiers:
     extremely_important:
@@ -167,69 +186,82 @@ triage:
 ```
 
 **Notes:**
-- `scan_rebuild`: defaults to `false`; set to `true` to enable triage during the rebuild phase (scanning archive + old inbox)
+- `owner_email`: printed with every candidate so the agent can apply the owner-input precision rule
 - `sender_tiers`: each tier is a list of name or email substrings (case-insensitive match)
 - `content_high_threshold`: tuned empirically; 0.6 is a reasonable starting point
+- `process` phases never invoke triage; candidate listing is only through the explicit `triage` command
 
-## Operating Procedure
+## Operating Procedure (Agent-in-the-Loop)
 
-### Preview Decisions (Dry-Run)
-
-Always preview before committing:
-
-```bash
-kontor-cli triage --dry-run
-```
-
-This outputs the LLM category decisions, target dates, and task names **without writing to Asana**. No email bodies are fetched or moved. No credentials are validated beyond syntax checks.
-
-### Commit Decisions (Live)
-
-When you are confident in the preview output:
+### Step 1 — List qualifying candidates
 
 ```bash
-kontor-cli process
+kontor-cli triage [--folder INBOX]
 ```
 
-With triage enabled in the config, the `process` command will:
-- Triage realtime inbox messages (INBOX-only by default)
-- Create Asana tasks for qualifying emails
-- Log a summary: tasks created, deduplicated, or skipped due to error
+This runs the deterministic eligibility gate and prints each qualifying email
+(id, sender, subject, reason, `canonical_folder`, `decisive_prior`, configured
+owner) **followed by its fetched body**. It is read-only: no Asana writes, no
+mailbox mutation.
 
-### Rebuild-Phase Triage (Optional)
+### Step 2 — Classify each candidate (the agent's job)
 
-To triage archive and old inbox during the rebuild phase:
+For each candidate, **read the body** and decide:
 
-1. Set `triage.scan_rebuild: true` in config.yaml
-2. Run: `kontor-cli process --phase rebuild`
+- the **category** — one of the four slugs:
+  `information_gathering`, `nudging`, `being_the_example`, `taking_decision`
+  (use the rubric below; favor `taking_decision` when `decisive_prior` is set
+  and the email genuinely contains a decision point)
+- an optional **deadline** (ISO `YYYY-MM-DD`) when the email implies one;
+  otherwise the email's own date is used as the due date
 
-This is opt-in because it can be slow (full mailbox scan) and may create many tasks retroactively.
+### Step 3 — Create the Asana task
+
+```bash
+kontor-cli triage-create \
+  --email-id <id> \
+  --category <slug> \
+  [--deadline 2026-07-15] \
+  [--folder INBOX] \
+  [--no-dry-run]
+```
+
+Defaults to `--dry-run` (offline preview only, no Asana calls or writes). Pass
+`--no-dry-run` to validate every configured project and perform the real,
+idempotent create. The command prints the resulting outcome, task name, and due
+date. Repeat per candidate.
 
 ## Failure Boundary
 
-### Fast-Fail Errors (Prevent All Triage)
+### Fast-Fail Errors
 
-These errors block the entire triage run before processing any emails:
+These errors block task creation:
 
 - Asana PAT is missing or invalid
 - Workspace GID is missing
 - One or more project GIDs are missing or invalid
-- LLM API key or base URL is missing
+- Dedup-query or task-creation API calls fail
 
-### Per-Email Errors (Skip & Log)
+On `--no-dry-run`, project validation occurs before mailbox access. These Asana
+failures produce a nonzero CLI exit; they are never reported as
+`outcome="skipped_error"`.
 
-These errors are caught inside `maybe_create_task`, logged at WARNING level, and converted to `outcome="skipped_error"`. Processing continues:
+### Per-Candidate Errors (Skip & Log)
 
-- Body fetch failure (himalaya read-failure)
-- LLM request timeout or HTTP error
-- LLM response parsing failure (invalid JSON, missing category)
-- Date parsing failure (unparseable deadline string)
-- Asana API error (network, quota, 403, 5xx)
+Body-fetch failures during `triage` candidate listing are caught, logged at
+WARNING level, and the email is skipped (no body to classify).
 
-The run summary reports:
-- `triage_tasks_created`: count of tasks successfully written to Asana
-- `triage_skipped_dedup`: count of emails already in the target project (marker found)
-- `triage_skipped_errors`: count of per-email errors (body/LLM/date/Asana failures)
+Local decision errors inside `create_task_for` are converted to
+`outcome="skipped_error"`:
+
+- Invalid agent-supplied category (not one of the four slugs)
+- Date resolution failure (no usable deadline and missing email date)
+
+Each `triage-create` invocation prints its outcome:
+- `created`: task successfully written to Asana
+- `skipped_dedup`: an email with the same marker already exists in the target project
+- `skipped_error`: a local category or date-resolution error
+- `preview`: dry-run, no write performed
 
 ### Deduplication Marker
 
@@ -251,29 +283,22 @@ The triage engine **never mutates** the mailbox:
 - No moves, no deletes, no flag changes
 - The mailbox is read-only from triage's perspective
 
-## LLM Categorization
+## Agent Categorization
 
-The LLM receives:
+The agent reads each candidate (From, Subject, Body, reason, `decisive_prior`)
+surfaced by `kontor-cli triage` and supplies, per `triage-create` call:
 
-- The 4 category definitions (information_gathering, nudging, being_the_example, taking_decision)
-- A soft bias toward `taking_decision` if the sender is in the `very_important` tier (does not override genuine content judgment)
-- The email's From, Subject, Date, and (conditionally) Body
+- **category** — exactly one of the four slugs (`information_gathering`,
+  `nudging`, `being_the_example`, `taking_decision`). An invalid slug is
+  rejected by the CLI (`click.Choice`).
+- **deadline** (optional) — an ISO `YYYY-MM-DD` date. When omitted, the
+  email's own date is used as the target due date.
 
-The LLM responds with strict JSON:
-
-```json
-{
-  "category": "<one of the 4 slugs>",
-  "deadline": "<ISO date or relative phrase or null>",
-  "rationale": "<short reason>"
-}
-```
-
-- **deadline** is parsed (if present) relative to the email's date; if parsing fails, falls back to the email's date as target date
-- **rationale** is included in task notes for transparency
-- Any invalid category or parse failure is logged and the email is skipped
+When `decisive_prior` is set on a candidate, softly favor `taking_decision` if
+the email genuinely contains a decision point; do not force it. The fixed
+`rationale` of "agent-supplied" is recorded in the task notes for traceability.
 
 ---
 
-**Version:** 1.0  
+**Version:** 2.0
 **Last updated:** 2026-06-28

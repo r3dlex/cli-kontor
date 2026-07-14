@@ -63,6 +63,39 @@ def test_validate_projects_missing_gid_raises_asana_error() -> None:
             client.validate_projects()
 
 
+def test_validate_projects_invalid_pat_raises_asana_error() -> None:
+    client = _make_client()
+    status_err = httpx.HTTPStatusError(
+        "401",
+        request=mock.MagicMock(),
+        response=mock.MagicMock(status_code=401),
+    )
+    err_resp = _mock_response({}, status_code=401)
+    err_resp.raise_for_status.side_effect = status_err
+
+    with mock.patch("httpx.get", return_value=err_resp):
+        with pytest.raises(AsanaError, match="HTTP 401"):
+            client.validate_projects()
+
+
+def test_validate_projects_fails_on_later_configured_gid() -> None:
+    client = _make_client()
+    ok = _mock_response({"data": {"gid": "proj-bugs-456"}})
+    status_err = httpx.HTTPStatusError(
+        "404",
+        request=mock.MagicMock(),
+        response=mock.MagicMock(status_code=404),
+    )
+    missing = _mock_response({}, status_code=404)
+    missing.raise_for_status.side_effect = status_err
+
+    with mock.patch("httpx.get", side_effect=[ok, missing]) as mock_get:
+        with pytest.raises(AsanaError, match="proj-features-789"):
+            client.validate_projects()
+
+    assert mock_get.call_count == 2
+
+
 def test_validate_never_posts_to_projects_endpoint() -> None:
     """validate_projects must never POST (i.e., never create a project)."""
     client = _make_client()

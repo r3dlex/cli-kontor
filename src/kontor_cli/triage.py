@@ -1,31 +1,30 @@
 """Email → Asana management-action triage.
 
-Deterministic importance scoring, recall-biased body-fetch selection, one
-mocked LLM boundary for category + deadline judgment, and idempotent task
-creation orchestration. All per-email LLM/Asana/date/body errors are caught
-inside ``maybe_create_task`` and turned into ``outcome="skipped_error"`` — they
-never propagate.
+Deterministic importance scoring, recall-biased body-fetch selection, and
+idempotent task creation orchestration. Category classification is supplied by
+the AGENT driving the skill (not a configured LLM): ``list_candidates`` surfaces
+the qualifying emails + bodies for the agent to read, and ``create_task_for``
+turns the agent's ``CategoryDecision`` into an idempotent Asana task. Local
+category/date errors become ``outcome="skipped_error"``; real-write Asana
+errors propagate so callers cannot report a failed write as successful.
 """
 
 from __future__ import annotations
 
-import json
 import logging
-from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
-
-import httpx
-from dateutil import parser as date_parser
+from typing import TYPE_CHECKING
 
 from . import himalaya
 from .asana_client import AsanaClient, AsanaError
+from .himalaya import list_emails, read_message_body
 
 if TYPE_CHECKING:
     from .config import Config
     from .himalaya import Email
+    from .pipeline import Pipeline
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +36,7 @@ TIER_WEIGHTS: dict[str, float] = {
 }
 
 # Broad subject-keyword pre-scan for the unlisted/non-customer remainder.
-# Over-fetch biased (recall over precision); the LLM is the precision filter.
+# Over-fetch biased (recall over precision); the agent is the precision filter.
 _CONTENT_KEYWORDS: tuple[str, ...] = (
     "escalation",
     "escalate",
@@ -123,11 +122,32 @@ class ImportanceScore:
 
 @dataclass
 class CategoryDecision:
-    """LLM judgment of category + (optional) deadline for a qualifying email."""
+    """Agent-supplied judgment of category + (optional) deadline for an email."""
 
     category: str
     deadline: date | None
     rationale: str
+
+
+@dataclass
+class TriageCandidate:
+    """A qualifying email surfaced for the agent to classify.
+
+    Carries the fetched body so the agent can read the full message and decide
+    on a category + deadline without a second round-trip.
+    """
+
+    email_id: str
+    from_name: str
+    from_addr: str
+    subject: str
+    body: str
+    reason: str
+    decisive_prior: bool
+    # Canonical taxonomy folder from the deterministic rules engine (e.g.
+    # "2_Projects/PRJ_Willemen"), or None when rules don't match. Gives the
+    # agent the email's canonical placement as context for category judgment.
+    canonical_folder: str | None = None
 
 
 @dataclass
@@ -158,10 +178,22 @@ class Triage:
                 config.asana_workspace_gid,
                 config.asana_project_gids,
             )
+        # The Pipeline owns deterministic rule classification. Build it lazily
+        # so create_task_for never loads rule files or the LLM classifier.
+        self._pipeline: Pipeline | None = None
+        self._pipeline_init = False
         self.tiers = config.triage_sender_tiers
         self.internal_domain = config.triage_internal_domain
         self.content_high_threshold = config.triage_content_high_threshold
-        # Decisive senders bias the LLM toward taking_decision (soft, not forced).
+        # Whose input/action a task must require (precision rule applied by the
+        # agent during classification — sender importance alone is insufficient).
+        self.owner_email = config.triage_owner_email
+        # Config-driven exclusion list (substring match on name/address),
+        # in addition to the is_automated() heuristic.
+        self.exclude_senders: list[str] = [
+            e.lower().strip() for e in config.triage_exclude_senders if e.strip()
+        ]
+        # Decisive senders surface a soft hint to the agent (not forced).
         self.decisive: list[str] = list(self.tiers.get("very_important", []))
 
     # ------------------------------------------------------------------ #
@@ -211,6 +243,58 @@ class Triage:
             return False
         return domain != self.internal_domain.lower()
 
+    @staticmethod
+    def is_automated(from_addr: str, from_name: str = "") -> bool:
+        """True for non-human automated/system senders (no-reply, notifications,
+        digests, platform alerts) that should never become an action item.
+
+        Matched on address local-part + domain markers, so real people at
+        external customer domains are NOT flagged.
+        """
+        addr = from_addr.strip().lower().strip("<>")
+        local, _, domain = addr.partition("@")
+        local_markers = (
+            "no-reply",
+            "noreply",
+            "no_reply",
+            "donotreply",
+            "do-not-reply",
+            "notification",  # covers notifications/notifications_*
+            "notify",
+            "mailer-daemon",
+            "postmaster",
+            "mailer",
+            "automated",
+            "alerts",
+            "newsletter",
+            "digest",
+            "bounce",
+            "-report",
+            "reports",
+            "office365reports",
+        )
+        if any(m in local for m in local_markers):
+            return True
+        domain_markers = (
+            "mail.microsoft",
+            "engage.mail",
+            "updates.",
+            "mailing.",
+            "mailchimp",
+            "sendgrid",
+            "amazonses",
+            "bounce",
+        )
+        return any(m in domain for m in domain_markers)
+
+    def is_excluded(self, email: Email) -> bool:
+        """True when the sender is automated OR matches a configured
+        ``triage.exclude_senders`` substring (name or address)."""
+        if self.is_automated(email.from_addr, email.from_name):
+            return True
+        haystack = f"{email.from_name}\n{email.from_addr}".lower()
+        return any(token in haystack for token in self.exclude_senders)
+
     def score_content(self, subject: str, body: str) -> float:
         """Deterministic 0..1 content-signal heuristic.
 
@@ -235,17 +319,21 @@ class Triage:
         """
         weight, decisive_prior, in_any_tier = self.score_sender(email)
         content = self.score_content(email.subject, body)
-        customer = self.is_customer(email.from_addr)
+        excluded = self.is_excluded(email)
+        customer = self.is_customer(email.from_addr) and not excluded
         escalation = content >= self.content_high_threshold
 
         high_tier = weight >= TIER_WEIGHTS["very_important"]
         also_tier = in_any_tier and not high_tier
 
+        # Automated/excluded senders (notifications, daily digests, Google,
+        # Miro, Office365 reports, …) never auto-qualify: a real customer must
+        # carry content signal, and machine escalations are not human asks.
         qualifies = (
             (high_tier and content > 0.0)
             or (also_tier and content >= self.content_high_threshold)
-            or customer
-            or escalation
+            or (customer and content > 0.0)
+            or (escalation and not excluded)
         )
 
         reasons: list[str] = []
@@ -253,12 +341,15 @@ class Triage:
             reasons.append("high-tier sender with actionable content")
         if also_tier and content >= self.content_high_threshold:
             reasons.append("also-important sender with strong content")
-        if customer:
-            reasons.append("external customer sender")
-        if escalation:
+        if customer and content > 0.0:
+            reasons.append("external customer sender with content signal")
+        if escalation and not excluded:
             reasons.append("high-signal escalation/decision content")
         if not reasons:
-            reasons.append("no qualifying signal (low importance)")
+            if excluded:
+                reasons.append("excluded automated/notification sender")
+            else:
+                reasons.append("no qualifying signal (low importance)")
 
         return ImportanceScore(
             sender_component=weight,
@@ -281,7 +372,12 @@ class Triage:
         fetch emits a DEBUG log naming the email id.
         """
         _, _, in_any_tier = self.score_sender(email)
-        if in_any_tier or self.is_customer(email.from_addr):
+        if in_any_tier:
+            return True
+        if self.is_excluded(email):
+            logger.debug("triage pre-filter declined %s: excluded sender", email.id)
+            return False
+        if self.is_customer(email.from_addr):
             return True
         if self.score_content(email.subject, "") > 0.0:
             return True
@@ -289,110 +385,71 @@ class Triage:
         return False
 
     # ------------------------------------------------------------------ #
-    # Step 6 — LLM category + deadline judgment + deterministic date
+    # Candidate surfacing — what the agent consumes to classify
     # ------------------------------------------------------------------ #
-    def judge_category(
-        self, email: Email, body: str, decisive_prior: bool
-    ) -> CategoryDecision | None:
-        """One LLM call returning ``{category, deadline, rationale}``.
-
-        Returns None on any HTTP/parse/validation error (e.g. category not in
-        the 4 slugs).
-        """
-        bias = ""
-        if decisive_prior:
-            bias = (
-                " The sender is a decisive stakeholder; softly favor "
-                "'taking_decision' when the content is genuinely a decision, "
-                "but do not force it."
-            )
-        rubric = (
-            "Categorize this email into exactly ONE management-action slug:\n"
-            "- information_gathering: observe & collect a signal, no action yet.\n"
-            "- nudging: subtly steer someone toward a better outcome.\n"
-            "- being_the_example: model a habit/standard/boundary visibly.\n"
-            "- taking_decision: a decision is required of the reader." + bias
-        )
-        date_str = email.date.isoformat() if email.date is not None else "unknown"
-        user_prompt = (
-            f"{rubric}\n\n"
-            f"From: {email.from_addr}\n"
-            f"Subject: {email.subject}\n"
-            f"Date: {date_str}\n\n"
-            f"Body:\n{body}\n\n"
-            "Respond with STRICT JSON only: "
-            '{"category": "<one of the 4 slugs>", '
-            '"deadline": "<ISO date or relative phrase or null>", '
-            '"rationale": "<short reason>"}'
-        )
-
-        try:
-            response = httpx.post(
-                f"{self.config.llm_base_url.rstrip('/')}/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {self.config.llm_api_key}",
-                    "Content-Type": "application/json",
-                },
-                json={
-                    "model": self.config.llm_model,
-                    "messages": [
-                        {"role": "user", "content": user_prompt},
-                    ],
-                    "temperature": self.config.llm_temperature,
-                },
-                timeout=self.config.llm_timeout,
-            )
-            response.raise_for_status()
-        except httpx.HTTPStatusError as exc:
-            logger.error(
-                "triage LLM returned %s for %s",
-                exc.response.status_code,
-                email.id,
-            )
-            return None
-        except httpx.RequestError as exc:
-            logger.error("triage LLM request failed for %s: %s", email.id, exc)
-            return None
-
-        try:
-            data = response.json()
-            content = data["choices"][0]["message"]["content"]
-            if content.strip().startswith("```"):
-                content = content.strip()[content.strip().find("\n") + 1 :]
-                if content.endswith("```"):
-                    content = content[:-3].strip()
-            parsed: dict[str, Any] = json.loads(content)
-        except (KeyError, IndexError, json.JSONDecodeError) as exc:
-            logger.error("triage LLM parse failed for %s: %r", email.id, exc)
-            return None
-
-        category = parsed.get("category")
-        if category not in _VALID_CATEGORIES:
-            logger.error(
-                "triage LLM returned invalid category %r for %s", category, email.id
-            )
-            return None
-
-        deadline_raw = parsed.get("deadline")
-        deadline: date | None = None
-        if deadline_raw:
+    def _canonical_folder(self, email: Email) -> str | None:
+        """Best-effort canonical taxonomy folder via the Pipeline's inline
+        rules classifier (lazily built). Returns None if rules don't match or are
+        unavailable — it is advisory context, never a hard dependency."""
+        if not self._pipeline_init:
+            self._pipeline_init = True
             try:
-                anchor = email.date if email.date is not None else None
-                deadline = (
-                    date_parser.parse(str(deadline_raw), default=anchor).date()
-                    if anchor is not None
-                    else date_parser.parse(str(deadline_raw)).date()
+                from .pipeline import Pipeline
+
+                self._pipeline = Pipeline(self.config, self.cwd)
+            except Exception as exc:  # noqa: BLE001 — canonical hint is optional
+                logger.debug("rules pipeline unavailable for triage context: %s", exc)
+                self._pipeline = None
+        if self._pipeline is None:
+            return None
+        try:
+            return self._pipeline.classify_with_rules(email)
+        except Exception as exc:  # noqa: BLE001 — canonical hint is best-effort
+            logger.debug("canonical classify failed for %s: %s", email.id, exc)
+            return None
+
+    def list_candidates(self, folder: str = "INBOX") -> list[TriageCandidate]:
+        """List qualifying emails (with bodies) for the agent to classify.
+
+        Lists the folder, applies the recall-biased body-fetch selector +
+        deterministic gate, and returns ONLY the qualifying emails together
+        with their fetched body. Per-email body-fetch errors are caught and
+        logged; the email is then skipped (no body to classify against).
+        """
+        candidates: list[TriageCandidate] = []
+        for email in list_emails(folder, cwd=self.cwd):
+            if self.should_fetch_body(email):
+                try:
+                    body = read_message_body(email.id, email.folder, cwd=self.cwd)
+                except Exception as exc:  # noqa: BLE001 — per-email skip-and-log
+                    logger.warning("triage body fetch failed for %s: %s", email.id, exc)
+                    continue
+            else:
+                body = ""
+
+            score = self.evaluate(email, body)
+            if not score.qualifies:
+                continue
+
+            canonical_folder = self._canonical_folder(email)
+
+            candidates.append(
+                TriageCandidate(
+                    email_id=email.id,
+                    from_name=email.from_name,
+                    from_addr=email.from_addr,
+                    subject=email.subject,
+                    body=body,
+                    reason=score.reason,
+                    decisive_prior=score.decisive_prior,
+                    canonical_folder=canonical_folder,
                 )
-            except (ValueError, OverflowError, TypeError):
-                # Keep the raw phrase out; resolve_target_date falls back.
-                deadline = None
+            )
+        return candidates
 
-        return CategoryDecision(
-            category=str(category),
-            deadline=deadline,
-            rationale=str(parsed.get("rationale", "")),
-        )
-
+    # ------------------------------------------------------------------ #
+    # Date resolution
+    # ------------------------------------------------------------------ #
     def resolve_target_date(self, decision: CategoryDecision, email: Email) -> str:
         """Resolve a concrete 'YYYY-MM-DD' due date.
 
@@ -406,7 +463,7 @@ class Triage:
         raise ValueError("no usable deadline and email.date is missing")
 
     # ------------------------------------------------------------------ #
-    # Step 7 — task assembly + orchestration
+    # Task assembly + orchestration
     # ------------------------------------------------------------------ #
     def _resolve_marker(self, email: Email) -> str:
         """Stable dedup marker: Message-ID preferred, UID fallback."""
@@ -435,58 +492,31 @@ class Triage:
             f"<!-- {marker} -->"
         )
 
-    def maybe_create_task(
+    def create_task_for(
         self,
         email: Email,
-        body_fetcher: Callable[[Email], str],
+        decision: CategoryDecision,
         dry_run: bool,
     ) -> TriageDecision:
-        """Orchestrate one email → at-most-one idempotent Asana task.
+        """Orchestrate one agent-classified email → at-most-one Asana task.
 
-        All LLM/Asana/date/body errors are caught here and converted into
-        ``outcome="skipped_error"``; they never propagate.
+        The agent has already gated + classified the email; this validates the
+        supplied category, resolves the due date, assembles the task, and (when
+        not a dry run) idempotently creates it. Local category/date errors become
+        ``outcome="skipped_error"``. Asana errors on the real-write path
+        propagate so the CLI can exit nonzero.
         """
-        # 1. Body (recall-biased selector).
-        if self.should_fetch_body(email):
-            try:
-                body = body_fetcher(email)
-            except Exception as exc:  # noqa: BLE001 — per-email skip-and-log
-                logger.warning("triage body fetch failed for %s: %s", email.id, exc)
-                return TriageDecision(
-                    email_id=email.id,
-                    qualifies=False,
-                    reason="body fetch failed",
-                    category=None,
-                    target_date=None,
-                    task_name=None,
-                    task_notes=None,
-                    outcome="skipped_error",
-                )
-        else:
-            body = ""
-
-        # 2. Deterministic gate.
-        score = self.evaluate(email, body)
-        if not score.qualifies:
-            return TriageDecision(
-                email_id=email.id,
-                qualifies=False,
-                reason=score.reason,
-                category=None,
-                target_date=None,
-                task_name=None,
-                task_notes=None,
-                outcome="not_qualified",
+        # 1. Validate the agent-supplied category.
+        if decision.category not in _VALID_CATEGORIES:
+            logger.warning(
+                "triage rejected invalid category %r for %s",
+                decision.category,
+                email.id,
             )
-
-        # 3. LLM category judgment.
-        decision = self.judge_category(email, body, score.decisive_prior)
-        if decision is None:
-            logger.warning("triage LLM produced no decision for %s", email.id)
             return TriageDecision(
                 email_id=email.id,
                 qualifies=True,
-                reason=score.reason,
+                reason="agent-supplied",
                 category=None,
                 target_date=None,
                 task_name=None,
@@ -494,7 +524,7 @@ class Triage:
                 outcome="skipped_error",
             )
 
-        # 4. Deterministic date.
+        # 2. Deterministic date.
         try:
             target_date = self.resolve_target_date(decision, email)
         except ValueError as exc:
@@ -502,7 +532,7 @@ class Triage:
             return TriageDecision(
                 email_id=email.id,
                 qualifies=True,
-                reason=score.reason,
+                reason="agent-supplied",
                 category=decision.category,
                 target_date=None,
                 task_name=None,
@@ -510,20 +540,20 @@ class Triage:
                 outcome="skipped_error",
             )
 
-        # 5. Stable marker.
+        # 3. Stable marker.
         marker = self._resolve_marker(email)
 
-        # 6. Assemble name + notes.
+        # 4. Assemble name + notes.
         category_title = decision.category.replace("_", " ").title()
         task_name = f"[{category_title}] {email.subject}"
         task_notes = self._build_notes(email, decision, marker)
 
-        # 7. Dry-run preview — no Asana calls.
+        # 5. Dry-run preview — no Asana calls.
         if dry_run:
             return TriageDecision(
                 email_id=email.id,
                 qualifies=True,
-                reason=score.reason,
+                reason="agent-supplied",
                 category=decision.category,
                 target_date=target_date,
                 task_name=task_name,
@@ -531,43 +561,28 @@ class Triage:
                 outcome="preview",
             )
 
-        # 8. Dedup scoped to the ONE target project.
+        # 6. Dedup scoped to the ONE target project.
         target_project_gid = self.config.asana_project_gids[decision.category]
-        try:
-            if self.asana is None:
-                raise AsanaError("Asana client not configured")
-            if self.asana.find_task_by_marker(target_project_gid, marker):
-                return TriageDecision(
-                    email_id=email.id,
-                    qualifies=True,
-                    reason=score.reason,
-                    category=decision.category,
-                    target_date=target_date,
-                    task_name=task_name,
-                    task_notes=task_notes,
-                    outcome="skipped_dedup",
-                )
-            # 9. Create.
-            self.asana.create_task(
-                target_project_gid, task_name, task_notes, target_date
-            )
-        except AsanaError as exc:
-            logger.warning("triage Asana call failed for %s: %s", email.id, exc)
+        if self.asana is None:
+            raise AsanaError("Asana client not configured")
+        if self.asana.find_task_by_marker(target_project_gid, marker):
             return TriageDecision(
                 email_id=email.id,
                 qualifies=True,
-                reason=score.reason,
+                reason="agent-supplied",
                 category=decision.category,
                 target_date=target_date,
                 task_name=task_name,
                 task_notes=task_notes,
-                outcome="skipped_error",
+                outcome="skipped_dedup",
             )
+        # 7. Create. Asana errors intentionally propagate to the CLI.
+        self.asana.create_task(target_project_gid, task_name, task_notes, target_date)
 
         return TriageDecision(
             email_id=email.id,
             qualifies=True,
-            reason=score.reason,
+            reason="agent-supplied",
             category=decision.category,
             target_date=target_date,
             task_name=task_name,

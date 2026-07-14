@@ -27,9 +27,30 @@
       "relation": "summarized-by",
       "created_by": "northstar",
       "evidence_path": ".ai/handoff/northstar-inline-rules-engine-classify.md"
+    },
+    {
+      "source": "intake:kontor-cli:agent-supplied-email-triage",
+      "target": "spec:kontor-cli:agent-supplied-email-triage",
+      "relation": "specified-by",
+      "created_by": "northstar",
+      "evidence_path": "docs/specifications/ACTIVE/agent-supplied-email-triage.md"
+    },
+    {
+      "source": "spec:kontor-cli:agent-supplied-email-triage",
+      "target": "plan:kontor-cli:northstar-agent-supplied-email-triage",
+      "relation": "planned-by",
+      "created_by": "northstar",
+      "evidence_path": ".ai/handoff/northstar-agent-supplied-email-triage.md"
+    },
+    {
+      "source": "plan:kontor-cli:northstar-agent-supplied-email-triage",
+      "target": "handoff:kontor-cli:northstar-agent-supplied-email-triage",
+      "relation": "summarized-by",
+      "created_by": "northstar",
+      "evidence_path": ".ai/handoff/northstar-agent-supplied-email-triage.md"
     }
   ],
-  "generated_at": "2026-06-28T12:54:35Z",
+  "generated_at": "2026-07-14T00:00:00Z",
   "nodes": [
     {
       "backlinks": [
@@ -93,6 +114,48 @@
       "path": ".ai/handoff/northstar-inline-rules-engine-classify.md",
       "backlinks": [
         "plan:kontor-cli:northstar-inline-rules-engine-classify"
+      ]
+    },
+    {
+      "id": "intake:kontor-cli:agent-supplied-email-triage",
+      "type": "intake",
+      "title": "work intake: agent-supplied email triage",
+      "status": "active",
+      "repo_id": "kontor-cli",
+      "path": ".ai/work-intake/agent-supplied-email-triage.md",
+      "backlinks": []
+    },
+    {
+      "id": "spec:kontor-cli:agent-supplied-email-triage",
+      "type": "specification",
+      "title": "specification: agent-supplied email triage",
+      "status": "active",
+      "repo_id": "kontor-cli",
+      "path": "docs/specifications/ACTIVE/agent-supplied-email-triage.md",
+      "backlinks": [
+        "intake:kontor-cli:agent-supplied-email-triage"
+      ]
+    },
+    {
+      "id": "plan:kontor-cli:northstar-agent-supplied-email-triage",
+      "type": "plan",
+      "title": "northstar sliced plan: agent-supplied email triage",
+      "status": "active",
+      "repo_id": "kontor-cli",
+      "path": ".ai/handoff/northstar-agent-supplied-email-triage.md",
+      "backlinks": [
+        "spec:kontor-cli:agent-supplied-email-triage"
+      ]
+    },
+    {
+      "id": "handoff:kontor-cli:northstar-agent-supplied-email-triage",
+      "type": "handoff",
+      "title": "northstar A->B handoff: agent-supplied email triage",
+      "status": "active",
+      "repo_id": "kontor-cli",
+      "path": ".ai/handoff/northstar-agent-supplied-email-triage.md",
+      "backlinks": [
+        "plan:kontor-cli:northstar-agent-supplied-email-triage"
       ]
     }
   ],
