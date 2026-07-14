@@ -6,21 +6,20 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+
 jobs:
-  _test-self-hosted:
-    name: "test (self-hosted)"
-    runs-on: [self-hosted, ubuntu-latest]
-    timeout-minutes: 30
-    # Self-hosted is the preferred leg; the canonical job falls back to a
-    # GitHub-hosted runner when it fails, so a failure here must not fail
-    # the overall run.
-    continue-on-error: true
+  test:
+    runs-on: ubuntu-latest
     strategy:
       matrix:
         python-version: ["3.12", "3.13"]
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
@@ -44,100 +43,18 @@ jobs:
           uv run ruff check src/ tests/
           uv run mypy src/ --ignore-missing-imports
 
-  _test-gate:
-    name: "test (gate)"
-    needs: _test-self-hosted
-    if: always()
-    runs-on: ubuntu-latest
-    outputs:
-      passed: ${{ steps.mark.outputs.passed }}
-    steps:
-      - id: mark
-        if: needs._test-self-hosted.result == 'success'
-        run: echo "passed=true" >> "$GITHUB_OUTPUT"
-
-  test:
-    needs: _test-gate
-    if: always()
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python-version: ["3.12", "3.13"]
-
-    steps:
-      - name: Route
-        run: echo "passed=${{ needs._test-gate.outputs.passed }}"
-
-      - uses: actions/checkout@v4
-        if: needs._test-gate.outputs.passed != 'true'
-
-      - name: Set up Python ${{ matrix.python-version }}
-        if: needs._test-gate.outputs.passed != 'true'
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python-version }}
-
-      - name: Install UV
-        if: needs._test-gate.outputs.passed != 'true'
-        uses: astral-sh/setup-uv@v4
-        with:
-          enable-cache: true
-
-      - name: Install dependencies
-        if: needs._test-gate.outputs.passed != 'true'
-        run: uv sync
-
-      - name: Run unit tests
-        if: needs._test-gate.outputs.passed != 'true'
-        run: uv run pytest tests/unit/ -v --tb=short
-
-      - name: Run with Python 3.12 only (lint + typecheck)
-        if: needs._test-gate.outputs.passed != 'true' && matrix.python-version == '3.12'
-        run: |
-          uv run ruff check src/ tests/
-          uv run mypy src/ --ignore-missing-imports
-
-  _smoke-self-hosted:
-    name: "smoke (self-hosted)"
-    runs-on: [self-hosted, ubuntu-latest]
-    timeout-minutes: 30
-    continue-on-error: true
-    outputs:
-      passed: ${{ steps.mark.outputs.passed }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      - uses: astral-sh/setup-uv@v4
-      - run: uv sync
-      - name: CLI smoke test
-        run: |
-          uv run kontor-cli --help
-          uv run kontor-cli check-config 2>&1 | grep -q "Config error" || echo "check-config runs"
-      - id: mark
-        if: success()
-        run: echo "passed=true" >> "$GITHUB_OUTPUT"
-
   smoke:
-    needs: _smoke-self-hosted
-    if: always()
     runs-on: ubuntu-latest
     steps:
-      - name: Route
-        run: echo "passed=${{ needs._smoke-self-hosted.outputs.passed }}"
       - uses: actions/checkout@v4
-        if: needs._smoke-self-hosted.outputs.passed != 'true'
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@v5
-        if: needs._smoke-self-hosted.outputs.passed != 'true'
         with:
           python-version: "3.12"
       - uses: astral-sh/setup-uv@v4
-        if: needs._smoke-self-hosted.outputs.passed != 'true'
       - run: uv sync
-        if: needs._smoke-self-hosted.outputs.passed != 'true'
       - name: CLI smoke test
-        if: needs._smoke-self-hosted.outputs.passed != 'true'
         run: |
           uv run kontor-cli --help
           uv run kontor-cli check-config 2>&1 | grep -q "Config error" || echo "check-config runs"
