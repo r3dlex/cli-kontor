@@ -26,3 +26,13 @@ def test_evolved_decision_logs_are_ignored_and_documented_as_sensitive() -> None
     assert "email ID, subject, and sender" in README_TEXT
     assert "treat these files as sensitive" in README_TEXT
     assert "delete them locally when that review or audit need ends" in README_TEXT
+
+
+def test_dry_run_discloses_llm_metadata_and_optional_triage_body_sharing() -> None:
+    assert "Even during a dry run" in README_TEXT
+    assert (
+        "fallback classification sends the email's sender, subject, and date to the "
+        "configured LLM" in README_TEXT
+    )
+    assert "full message body" in README_TEXT
+    assert "only the Asana write is suppressed" in README_TEXT

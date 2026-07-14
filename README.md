@@ -45,11 +45,14 @@ Config OK — all prerequisites satisfied.
 
 The dry run emits JSON log records such as `[DRY-RUN] Would move email ...` and
 ends with `Phase 'realtime' complete: {...}`. No mailbox message is moved and no
-Asana task is created during a dry run. Classification can still call the
-configured LLM and write local decision logs under `rules/evolved/`. Those logs
-include the email ID, subject, and sender. They are gitignored, but treat these
-files as sensitive: restrict access, retain them only for an active review or
-audit need, and delete them locally when that review or audit need ends.
+Asana task is created during a dry run. Even during a dry run, fallback
+classification sends the email's sender, subject, and date to the configured LLM.
+When optional triage is enabled and selects a message for evaluation, it sends
+the full message body to the configured LLM; only the Asana write is suppressed.
+Classification can also write local decision logs under `rules/evolved/`. Those
+logs include the email ID, subject, and sender. They are gitignored, but treat
+these files as sensitive: restrict access, retain them only for an active review
+or audit need, and delete them locally when that review or audit need ends.
 
 ## Safety Model
 
