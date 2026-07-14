@@ -25,6 +25,7 @@ htmlcov/
 !.omc/wiki/
 config.work.yaml
 config.yaml
+rules/evolved/
 
 # OMC runtime state placed under non-root paths (e.g. src/**/.omc/).
 # The top-level .omc/* rule above covers the root; this catches nested
