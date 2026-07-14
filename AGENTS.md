@@ -33,6 +33,13 @@ uv run mypy src/ --ignore-missing-imports # 0 errors
 This repo follows the v3 AI-SDLC layout. See `.ai/matrix.json`, `.memory/human-override/`, and `docs/architecture/adr/`. Modules at `r3dlex/skills/ai-sdlc-init/modules/`.
 <!-- v3-ai-sdlc-init:end -->
 
+## Protected edit approvals
+
+The shared contract is `.ai/rules/protected-edit-approvals.md`. Individual
+approval remains recommended. Block approval is optional only for an exact,
+manifest-bound large set at the current Git HEAD. It never applies to
+`agent-config`.
+
 <!-- ai-sdlc-init:start -->
 ## AI-SDLC v3 governance
 
