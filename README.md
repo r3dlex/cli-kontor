@@ -46,7 +46,10 @@ Config OK — all prerequisites satisfied.
 The dry run emits JSON log records such as `[DRY-RUN] Would move email ...` and
 ends with `Phase 'realtime' complete: {...}`. No mailbox message is moved and no
 Asana task is created during a dry run. Classification can still call the
-configured LLM and write local decision logs under `rules/evolved/`.
+configured LLM and write local decision logs under `rules/evolved/`. Those logs
+include the email ID, subject, and sender. They are gitignored, but treat these
+files as sensitive: restrict access, retain them only for an active review or
+audit need, and delete them locally when that review or audit need ends.
 
 ## Safety Model
 
@@ -54,7 +57,9 @@ configured LLM and write local decision logs under `rules/evolved/`.
   the same pipeline while suppressing mailbox moves and Asana writes.
 - Process commands mutate the mailbox by moving messages. They never delete
   messages; `delete_email()` always raises `DeleteNotSupportedError`.
-- `classify --email-id ...` prints one target folder and does not move the
+- `classify` evaluates deterministic YAML and Python rules only; it does not
+  call the LLM fallback used by `process`. `classify --email-id ...` prints the
+  resulting rules-only target (or the `4_Info` default) and does not move the
   message. `triage` is also preview-only.
 - `config.yaml` is gitignored. Keep mailbox and API credentials out of commits.
 - Re-running a phase is supported. Messages already in their target folder are
@@ -67,8 +72,8 @@ After reviewing dry-run output, run the narrowest mutating phase that fits:
 
 ```bash
 uv run kontor-cli process --phase realtime  # Move classified inbox messages
-uv run kontor-cli process --phase rebuild   # Re-evaluate all live taxonomy folders
-uv run kontor-cli process --phase heal      # Repair folder-policy violations
+uv run kontor-cli process --phase rebuild   # Re-evaluate messages in fixed scan folders
+uv run kontor-cli process --phase heal      # Repair violations in fixed scan folders
 ```
 
 Useful read-only or guarded commands:
@@ -80,6 +85,10 @@ uv run kontor-cli dry-run --phase rebuild   # Preview the broad historical pass
 uv run kontor-cli dry-run --phase heal      # Preview invariant repairs
 uv run kontor-cli process --phase heal --rules-freeze
 ```
+
+`rebuild` and `heal` scan only the fixed `SCAN_FOLDERS` list in the pipeline;
+they do not discover arbitrary valid taxonomy folders. In particular, a valid
+`MGT_`, `PRJ_`, or `EXT_` folder that is absent from that list is not scanned.
 
 `--rules-freeze` writes a timestamped snapshot of evolved-rule metadata before
 the heal run. Use it when a reviewed heal run should retain that audit point.
