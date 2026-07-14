@@ -4,9 +4,9 @@ Deterministic importance scoring, recall-biased body-fetch selection, and
 idempotent task creation orchestration. Category classification is supplied by
 the AGENT driving the skill (not a configured LLM): ``list_candidates`` surfaces
 the qualifying emails + bodies for the agent to read, and ``create_task_for``
-turns the agent's ``CategoryDecision`` into an idempotent Asana task. All
-per-email Asana/date errors are caught inside ``create_task_for`` and turned
-into ``outcome="skipped_error"`` — they never propagate.
+turns the agent's ``CategoryDecision`` into an idempotent Asana task. Local
+category/date errors become ``outcome="skipped_error"``; real-write Asana
+errors propagate so callers cannot report a failed write as successful.
 """
 
 from __future__ import annotations
@@ -502,9 +502,9 @@ class Triage:
 
         The agent has already gated + classified the email; this validates the
         supplied category, resolves the due date, assembles the task, and (when
-        not a dry run) idempotently creates it. All date/Asana errors are caught
-        here and converted into ``outcome="skipped_error"``; they never
-        propagate.
+        not a dry run) idempotently creates it. Local category/date errors become
+        ``outcome="skipped_error"``. Asana errors on the real-write path
+        propagate so the CLI can exit nonzero.
         """
         # 1. Validate the agent-supplied category.
         if decision.category not in _VALID_CATEGORIES:
@@ -563,26 +563,9 @@ class Triage:
 
         # 6. Dedup scoped to the ONE target project.
         target_project_gid = self.config.asana_project_gids[decision.category]
-        try:
-            if self.asana is None:
-                raise AsanaError("Asana client not configured")
-            if self.asana.find_task_by_marker(target_project_gid, marker):
-                return TriageDecision(
-                    email_id=email.id,
-                    qualifies=True,
-                    reason="agent-supplied",
-                    category=decision.category,
-                    target_date=target_date,
-                    task_name=task_name,
-                    task_notes=task_notes,
-                    outcome="skipped_dedup",
-                )
-            # 7. Create.
-            self.asana.create_task(
-                target_project_gid, task_name, task_notes, target_date
-            )
-        except AsanaError as exc:
-            logger.warning("triage Asana call failed for %s: %s", email.id, exc)
+        if self.asana is None:
+            raise AsanaError("Asana client not configured")
+        if self.asana.find_task_by_marker(target_project_gid, marker):
             return TriageDecision(
                 email_id=email.id,
                 qualifies=True,
@@ -591,8 +574,10 @@ class Triage:
                 target_date=target_date,
                 task_name=task_name,
                 task_notes=task_notes,
-                outcome="skipped_error",
+                outcome="skipped_dedup",
             )
+        # 7. Create. Asana errors intentionally propagate to the CLI.
+        self.asana.create_task(target_project_gid, task_name, task_notes, target_date)
 
         return TriageDecision(
             email_id=email.id,

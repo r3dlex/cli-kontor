@@ -107,10 +107,12 @@ workspace and four category project GIDs shown in `config.example.yaml`.
 canonical folder, decisive-sender hint, and configured owner. The agent should
 create a task only when the message requires that owner's input or action.
 
-`triage-create` defaults to a no-write preview. Pass `--deadline YYYY-MM-DD`
-when the message supplies a due date; malformed dates fail before mailbox
-access. Pass `--no-dry-run` only after reviewing the preview to perform the
-idempotent Asana write. Neither triage command moves or deletes email.
+`triage-create` defaults to an offline, no-write preview. Pass `--deadline
+YYYY-MM-DD` when the message supplies a due date; the dashed form is required,
+and malformed or compact dates fail before mailbox access. Pass `--no-dry-run`
+only after reviewing the preview. The real-write path validates every configured
+Asana project before mailbox access and exits nonzero on validation, dedup-query,
+or task-creation API failures. Neither triage command moves or deletes email.
 
 ## Update and Rerun
 

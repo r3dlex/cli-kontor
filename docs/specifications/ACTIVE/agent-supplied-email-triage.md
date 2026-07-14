@@ -23,8 +23,11 @@ prints `canonical_folder=-` and continues.
 
 The agent supplies one of the four category slugs and an optional ISO deadline
 to `triage-create`. The command defaults to a no-write preview. A real,
-idempotent Asana write requires `--no-dry-run`. A malformed deadline is a CLI
-usage error and is rejected before mailbox access, without a traceback.
+idempotent Asana write requires `--no-dry-run`. Deadlines must use the exact
+dashed `YYYY-MM-DD` form; malformed and compact values are CLI usage errors and
+are rejected before mailbox access, without a traceback. Preview makes no Asana
+calls. Before a real write, the command validates every configured project;
+validation, dedup-query, and create API failures exit nonzero.
 
 ## Acceptance criteria
 
@@ -33,9 +36,11 @@ usage error and is rejected before mailbox access, without a traceback.
 - Owner context matches the configured `triage.owner_email`.
 - `triage` performs no Asana write or mailbox mutation.
 - `process` performs no triage or Asana action.
-- Invalid deadlines exit cleanly before listing mail.
+- Invalid or compact deadlines exit cleanly before listing mail.
 - `triage-create` remains preview-by-default and the real write path remains
   explicit.
+- Preview stays offline; real writes validate every configured Asana project
+  before mailbox access and never report API failures as `skipped_error`.
 - Source and tests contain no imports or calls to the removed classifier
   wrapper; triage uses the Pipeline's inline classifier.
 - README, config example, and email-to-Asana skill agree with this behavior.

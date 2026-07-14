@@ -542,6 +542,7 @@ class TestTriageCreate:
         instance.create_task_for.assert_called_once()
         call = instance.create_task_for.call_args
         assert call.kwargs.get("dry_run") is True or call.args[2] is True
+        instance.asana.validate_projects.assert_not_called()
 
     def test_no_dry_run_creates_real_task(self) -> None:
         from click.testing import CliRunner
@@ -577,6 +578,7 @@ class TestTriageCreate:
 
         assert result.exit_code == 0, result.output
         assert "created" in result.output
+        instance.asana.validate_projects.assert_called_once_with()
         # the only write path: dry_run must flow through as False
         call = instance.create_task_for.call_args
         passed = call.kwargs.get("dry_run")
@@ -699,6 +701,111 @@ class TestTriageCreate:
         assert "YYYY-MM-DD" in result.output
         assert "Traceback" not in result.output
         mock_list.assert_not_called()
+
+    def test_compact_deadline_fails_cleanly_before_mailbox_access(self) -> None:
+        from click.testing import CliRunner
+
+        from kontor_cli.cli import cli
+        from kontor_cli.config import Config
+
+        mock_cfg = mock.MagicMock(spec=Config)
+        mock_cfg.triage_enabled = True
+
+        with mock.patch("kontor_cli.cli.Config.load", return_value=mock_cfg):
+            with mock.patch("kontor_cli.cli.list_emails") as mock_list:
+                runner = CliRunner()
+                result = runner.invoke(
+                    cli,
+                    [
+                        "triage-create",
+                        "--email-id",
+                        "99",
+                        "--category",
+                        "nudging",
+                        "--deadline",
+                        "20260714",
+                    ],
+                    catch_exceptions=False,
+                )
+
+        assert result.exit_code == 2
+        assert "Invalid value for --deadline" in result.output
+        assert "YYYY-MM-DD" in result.output
+        assert "Traceback" not in result.output
+        mock_list.assert_not_called()
+
+    def test_no_dry_run_validation_error_exits_before_mailbox_access(self) -> None:
+        from click.testing import CliRunner
+
+        from kontor_cli.asana_client import AsanaError
+        from kontor_cli.cli import cli
+        from kontor_cli.config import Config
+
+        mock_cfg = mock.MagicMock(spec=Config)
+        mock_cfg.triage_enabled = True
+
+        with mock.patch("kontor_cli.cli.Config.load", return_value=mock_cfg):
+            with mock.patch("kontor_cli.cli.list_emails") as mock_list:
+                with mock.patch("kontor_cli.cli.Triage") as mock_triage_cls:
+                    instance = mock_triage_cls.return_value
+                    instance.asana.validate_projects.side_effect = AsanaError(
+                        "Project 'bad-gid' is missing or inaccessible: HTTP 404"
+                    )
+                    runner = CliRunner()
+                    result = runner.invoke(
+                        cli,
+                        [
+                            "triage-create",
+                            "--email-id",
+                            "99",
+                            "--category",
+                            "nudging",
+                            "--no-dry-run",
+                        ],
+                    )
+
+        assert result.exit_code == 1
+        assert "Asana validation failed" in result.output
+        assert "bad-gid" in result.output
+        assert "skipped_error" not in result.output
+        mock_list.assert_not_called()
+        instance.create_task_for.assert_not_called()
+
+    def test_no_dry_run_create_error_exits_nonzero(self) -> None:
+        from click.testing import CliRunner
+
+        from kontor_cli.asana_client import AsanaError
+        from kontor_cli.cli import cli
+        from kontor_cli.config import Config
+
+        mock_cfg = mock.MagicMock(spec=Config)
+        mock_cfg.triage_enabled = True
+        email = self._make_email()
+
+        with mock.patch("kontor_cli.cli.Config.load", return_value=mock_cfg):
+            with mock.patch("kontor_cli.cli.list_emails", return_value=[email]):
+                with mock.patch("kontor_cli.cli.Triage") as mock_triage_cls:
+                    instance = mock_triage_cls.return_value
+                    instance.create_task_for.side_effect = AsanaError(
+                        "Failed to create task: HTTP 500"
+                    )
+                    runner = CliRunner()
+                    result = runner.invoke(
+                        cli,
+                        [
+                            "triage-create",
+                            "--email-id",
+                            "99",
+                            "--category",
+                            "nudging",
+                            "--no-dry-run",
+                        ],
+                    )
+
+        assert result.exit_code == 1
+        assert "Asana task creation failed" in result.output
+        assert "HTTP 500" in result.output
+        assert "skipped_error" not in result.output
 
     def test_email_not_found_exits_1(self) -> None:
         from click.testing import CliRunner

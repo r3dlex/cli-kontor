@@ -14,9 +14,7 @@ The skill, in agent-in-the-loop form:
 2. The CLI fetches email bodies for qualifying messages (recall-biased: always fetch for listed senders or customers, over-fetch the rest) and surfaces them as candidates
 3. **The agent reads each candidate's body and classifies it** into one of the four categories (+ optional deadline)
 4. The CLI creates one Asana task per agent-classified email (idempotent, dedup-scoped to the target project)
-5. The CLI reports a preview decision (dry-run) or committed task creation (with full error handling)
-
-All per-email Asana/date errors are caught and logged; they do not propagate and do not prevent processing of subsequent emails.
+5. The CLI reports an offline preview decision (dry-run) or committed task creation; real-write Asana failures exit nonzero
 
 ## The 4 Categories & Their Asana Projects
 
@@ -228,9 +226,10 @@ kontor-cli triage-create \
   [--no-dry-run]
 ```
 
-Defaults to `--dry-run` (preview only, no Asana writes). Pass `--no-dry-run`
-to perform the real, idempotent create. The command prints the resulting
-outcome, task name, and due date. Repeat per candidate.
+Defaults to `--dry-run` (offline preview only, no Asana calls or writes). Pass
+`--no-dry-run` to validate every configured project and perform the real,
+idempotent create. The command prints the resulting outcome, task name, and due
+date. Repeat per candidate.
 
 ## Failure Boundary
 
@@ -241,23 +240,27 @@ These errors block task creation:
 - Asana PAT is missing or invalid
 - Workspace GID is missing
 - One or more project GIDs are missing or invalid
+- Dedup-query or task-creation API calls fail
+
+On `--no-dry-run`, project validation occurs before mailbox access. These Asana
+failures produce a nonzero CLI exit; they are never reported as
+`outcome="skipped_error"`.
 
 ### Per-Candidate Errors (Skip & Log)
 
 Body-fetch failures during `triage` candidate listing are caught, logged at
 WARNING level, and the email is skipped (no body to classify).
 
-Errors during `triage-create` are caught inside `create_task_for`, logged at
-WARNING level, and converted to `outcome="skipped_error"`:
+Local decision errors inside `create_task_for` are converted to
+`outcome="skipped_error"`:
 
 - Invalid agent-supplied category (not one of the four slugs)
 - Date resolution failure (no usable deadline and missing email date)
-- Asana API error (network, quota, 403, 5xx), or Asana client not configured
 
 Each `triage-create` invocation prints its outcome:
 - `created`: task successfully written to Asana
 - `skipped_dedup`: an email with the same marker already exists in the target project
-- `skipped_error`: a per-candidate error (category/date/Asana failure)
+- `skipped_error`: a local category or date-resolution error
 - `preview`: dry-run, no write performed
 
 ### Deduplication Marker

@@ -472,7 +472,7 @@ class TestOrchestration:
         assert result.task_name == "[Taking Decision] Quarterly sync"
         assert result.outcome == "created"
 
-    def test_asana_error_returns_skipped_error(self) -> None:
+    def test_asana_error_propagates_for_real_write(self) -> None:
         t = _make_triage()
         t.asana = mock.MagicMock()
         t.asana.find_task_by_marker.return_value = False
@@ -481,18 +481,18 @@ class TestOrchestration:
         with mock.patch(
             "kontor_cli.triage.himalaya.read_message_id", return_value="m1"
         ):
-            result = t.create_task_for(email, self._decision(), dry_run=False)
-        assert result.outcome == "skipped_error"
+            with pytest.raises(AsanaError, match="500"):
+                t.create_task_for(email, self._decision(), dry_run=False)
 
-    def test_none_client_returns_skipped_error(self) -> None:
+    def test_none_client_raises_for_real_write(self) -> None:
         t = _make_triage()
         t.asana = None
         email = _make_email(from_addr="ceo@rib-software.com", subject="approve")
         with mock.patch(
             "kontor_cli.triage.himalaya.read_message_id", return_value="m1"
         ):
-            result = t.create_task_for(email, self._decision(), dry_run=False)
-        assert result.outcome == "skipped_error"
+            with pytest.raises(AsanaError, match="not configured"):
+                t.create_task_for(email, self._decision(), dry_run=False)
 
     def test_date_resolution_failure_returns_skipped_error(self) -> None:
         t = _make_triage()

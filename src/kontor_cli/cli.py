@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 import sys
 from datetime import UTC, date
 from pathlib import Path
@@ -10,6 +11,7 @@ from typing import Any
 
 import click
 
+from kontor_cli.asana_client import AsanaError
 from kontor_cli.config import (
     Config,
     ConfigError,
@@ -363,6 +365,8 @@ def triage_create_cmd(
         sys.exit(1)
 
     try:
+        if deadline and re.fullmatch(r"\d{4}-\d{2}-\d{2}", deadline) is None:
+            raise ValueError
         parsed_deadline = date.fromisoformat(deadline) if deadline else None
     except ValueError as exc:
         raise click.BadParameter(
@@ -370,6 +374,17 @@ def triage_create_cmd(
         ) from exc
 
     root = (config_path or Path.cwd() / "config.yaml").parent
+    triage = Triage(cfg, cwd=root)
+    if not dry_run:
+        if triage.asana is None:
+            raise click.ClickException(
+                "Asana validation failed: Asana client not configured"
+            )
+        try:
+            triage.asana.validate_projects()
+        except AsanaError as exc:
+            raise click.ClickException(f"Asana validation failed: {exc}") from exc
+
     emails = list_emails(folder, cwd=root)
     email = next((e for e in emails if e.id == email_id), None)
     if email is None:
@@ -382,8 +397,10 @@ def triage_create_cmd(
         rationale="agent-supplied",
     )
 
-    triage = Triage(cfg, cwd=root)
-    result = triage.create_task_for(email, decision, dry_run=dry_run)
+    try:
+        result = triage.create_task_for(email, decision, dry_run=dry_run)
+    except AsanaError as exc:
+        raise click.ClickException(f"Asana task creation failed: {exc}") from exc
     click.echo(
         f"outcome={result.outcome}  task={result.task_name or '-'}"
         f"  due={result.target_date or '-'}"
