@@ -120,7 +120,7 @@ def classify(
     result = pipeline.classify_with_rules(email)
     nl_context = nl_rules.nl_rules_context(pipeline.nl_rules)
 
-    from kontor_cli.folders import FolderPolicy
+    from kontor_cli.folders import FolderPolicy, taxonomy_payload
 
     target = FolderPolicy(cfg.pipeline_archive_months).target_for(email.date, result)
 
@@ -140,17 +140,7 @@ def classify(
             "rules_match": result is not None,
             "nl_context": nl_context,
             "archive_age_months": cfg.pipeline_archive_months,
-            "taxonomy": {
-                "0_Action": "Requires immediate action from you",
-                "1_Management/MGT_<Topic>": "Management topics: reporting, HR, legal, compliance",
-                "2_Projects/PRJ_<Domain>_<Initiative>_<Scope>": "Project work: specs, status updates, reviews",
-                "3_External/EXT_<Company>_<Topic>": "External parties: vendors, partners, clients",
-                "4_Info": "Informational only: newsletters, announcements",
-                "9_System": "System emails: CI/CD, security alerts, infra",
-                "Archive/<same_path>": (
-                    f"Emails older than {cfg.pipeline_archive_months} months"
-                ),
-            },
+            "taxonomy": taxonomy_payload(cfg.pipeline_archive_months),
         }
         click.echo(json.dumps(payload, indent=2))
     else:

@@ -1,8 +1,12 @@
-"""Folder taxonomy model and the folder policy for kontor-cli.
+"""Folder taxonomy registry and the folder policy for kontor-cli.
 
-The folder policy is the single place that decides where an email lands:
-taxonomy default for unclassified emails, and age-based archive enforcement
-(the operational arm of ADR-0001 move-only).
+The taxonomy registry is the single home of the folder taxonomy: the valid
+folder names (is_valid_folder), the scan scope for the rebuild and heal
+phases (scan_folders), and the taxonomy payload the classifier prompt and
+the classify --recommend output are built from. The folder policy is the
+single place that decides where an email lands: taxonomy default for
+unclassified emails, and age-based archive enforcement (the operational arm
+of ADR-0001 move-only).
 """
 
 from __future__ import annotations
@@ -17,19 +21,21 @@ class FolderInvariantError(ValueError):
     """Raised when a folder name violates the taxonomy."""
 
 
-# Valid root-level folder prefixes
-VALID_ROOT_PREFIXES = (
+# Live taxonomy roots: the folders the classifier may name as a target and
+# the pipeline scans. The Archive mirror and the mail-client folders are
+# valid folder names but are never scan targets.
+TAXONOMY_ROOTS: tuple[str, ...] = (
     "0_Action",
     "1_Management",
     "2_Projects",
     "3_External",
     "4_Info",
     "9_System",
-    "Archive",
-    "Drafts",
-    "Sent",
-    "Trash",
 )
+
+# Valid root-level folder prefixes: the taxonomy roots, the Archive mirror
+# root, and the mail-client folders the validator must tolerate.
+VALID_ROOT_PREFIXES = TAXONOMY_ROOTS + ("Archive", "Drafts", "Sent", "Trash")
 
 # Valid sub-prefixes by parent
 VALID_SUB_PREFIXES: dict[str, tuple[str, ...]] = {
@@ -66,6 +72,126 @@ VALID_SUB_PREFIXES: dict[str, tuple[str, ...]] = {
 }
 
 ARCHIVE_ROOT = "Archive"
+
+# Roots that are valid folder names but are never scan targets: the Archive
+# mirror and the mail-client folders.
+NON_SCAN_ROOTS: frozenset[str] = frozenset({"Archive", "Drafts", "Sent", "Trash"})
+
+# Legacy folders: mailbox folders that still hold unprocessed email but that
+# the taxonomy validator rejects — they predate the registry (root level) or
+# its naming patterns (pre-EXT_ external folders, pre-taxonomy project
+# folders). Retained explicitly as data next to the registry so the derived
+# scan scope keeps visiting them until the mailbox migration completes.
+LEGACY_SCAN_FOLDERS: tuple[str, ...] = (
+    # Root-level folders that predate the taxonomy.
+    "Projects",
+    "Executive",
+    "Admin",
+    "Finance",
+    "HR",
+    "Releases",
+    "Security",
+    "Travel",
+    "Newsletters",
+    "Logs",
+    "Review",
+    "Communication",
+    # Pre-taxonomy subfolders of live roots.
+    "2_Projects/RIB-4.0/AI",
+    "2_Projects/Finance",
+    "2_Projects/Infrastructure",
+    "3_External/Trivium",
+    "3_External/Miro",
+    "3_External/GitHub",
+    "3_External/Mitarbeiterangebote",
+    "3_External/Reportlinker",
+    "3_External/CoachHub",
+    "3_External/Viseo",
+    "3_External/HeroDevs",
+    "3_External/Microsoft",
+)
+
+# Canonical description per taxonomy entry. This table is the single home of
+# the classifier prompt's taxonomy section and the classify --recommend
+# taxonomy payload; both are derived from it instead of restating the
+# taxonomy by hand.
+TAXONOMY_DESCRIPTIONS: dict[str, str] = {
+    "0_Action": "Requires immediate action from you. Not a storage folder.",
+    "1_Management/MGT_<Topic>": (
+        "Management topics: reporting, HR, legal, compliance, meetings, 1:1s."
+    ),
+    "2_Projects/PRJ_<Domain>_<Initiative>_<Scope>": (
+        "Project work: specs, status updates, reviews, kickoffs."
+    ),
+    "3_External/EXT_<Company>_<Topic>": "External parties: vendors, partners, clients.",
+    "4_Info": "Informational only. Newsletters, announcements, system notifications.",
+    "9_System": "System emails: password resets, security alerts, CI/CD pipelines, infra.",
+    "Archive/<same_path>": (
+        "Emails older than 6 months, or already-processed emails from any folder."
+    ),
+}
+
+
+def taxonomy_folders() -> tuple[str, ...]:
+    """Enumerate the concrete folders the taxonomy registry knows.
+
+    Every taxonomy root plus every concrete subfolder named in
+    VALID_SUB_PREFIXES. Prefix families (entries ending in "_", e.g. MGT_)
+    name a family of folders rather than one folder, so they are validator
+    patterns only and cannot be enumerated. The Archive mirror and the
+    mail-client folders are valid folder names but are not scan targets.
+    """
+    folders = list(TAXONOMY_ROOTS)
+    for root, subs in VALID_SUB_PREFIXES.items():
+        if root in NON_SCAN_ROOTS:
+            continue
+        folders.extend(
+            f"{root}/{sub}"
+            for sub in subs
+            if not sub.endswith("_") and is_valid_folder(f"{root}/{sub}")
+        )
+    return tuple(folders)
+
+
+def scan_folders() -> tuple[str, ...]:
+    """Return the rebuild/heal scan scope, derived from the registry.
+
+    INBOX plus every concrete taxonomy folder the registry enumerates plus
+    the retained legacy folders. The Archive mirror and the mail-client
+    folders (Drafts, Sent, Trash) are valid folder names but are never
+    scanned.
+    """
+    return ("INBOX",) + taxonomy_folders() + LEGACY_SCAN_FOLDERS
+
+
+def taxonomy_prompt() -> str:
+    """Build the classifier prompt's taxonomy section from the registry."""
+    entries = [f"- **{name}** — {desc}" for name, desc in TAXONOMY_DESCRIPTIONS.items()]
+    return "\n".join(
+        [
+            "## Email Folder Taxonomy",
+            "",
+            "Emails MUST be placed in exactly one of these folders:",
+            "",
+            *entries,
+            "",
+            "Folder naming rules:",
+            '- Sub-folders use "/" (e.g., "2_Projects/PRJ_Finance_ERP_Global")',
+            '- Archive mirrors the exact structure (e.g., "Archive/2_Projects/PRJ_Finance_ERP_Global")',
+            "- Never create folders outside this taxonomy.",
+        ]
+    )
+
+
+def taxonomy_payload(archive_age_months: int) -> dict[str, str]:
+    """Build the classify --recommend taxonomy payload from the registry.
+
+    The Archive entry reflects the configured archive age (the folder policy
+    default is 6 months).
+    """
+    payload = dict(TAXONOMY_DESCRIPTIONS)
+    payload["Archive/<same_path>"] = f"Emails older than {archive_age_months} months"
+    return payload
 
 
 def is_valid_folder(folder_name: str) -> bool:

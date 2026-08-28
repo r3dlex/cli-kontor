@@ -14,9 +14,13 @@ def test_readme_distinguishes_classify_from_process_llm_fallback() -> None:
     assert "does not call the LLM fallback" in README_TEXT
 
 
-def test_readme_limits_rebuild_and_heal_to_fixed_scan_folders() -> None:
-    assert "`rebuild` and `heal` scan only the fixed `SCAN_FOLDERS` list" in README_TEXT
-    assert "do not discover arbitrary valid taxonomy folders" in README_TEXT
+def test_readme_describes_derived_scan_scope() -> None:
+    assert (
+        "`rebuild` and `heal` derive their scan scope from the folder taxonomy"
+        in README_TEXT
+    )
+    assert "plus the legacy folders retained in the registry" in README_TEXT
+    assert "in one edit" in README_TEXT
 
 
 def test_evolved_decision_logs_are_ignored_and_documented_as_sensitive() -> None:
