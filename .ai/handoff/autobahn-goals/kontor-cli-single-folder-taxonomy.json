@@ -1,0 +1,43 @@
+{
+  "id": "kontor-cli-single-folder-taxonomy",
+  "implementation_ready": true,
+  "issue_ref": ".ai/handoff/autobahn-goals/kontor-cli-single-folder-taxonomy.json",
+  "context": "The folder taxonomy is defined in 5 places: pipeline.py SCAN_FOLDERS (48 hardcoded entries incl. legacy folders its own validator rejects), folders.py (the glossary-named owner), classifier.py FOLDER_TAXONOMY prompt, cli.py classify --recommend payload, and docs/folder-descriptions.yaml. Adding one folder touches 4-5 files, and a valid folder absent from SCAN_FOLDERS is not scanned — a documented correctness gap.",
+  "root_causes": [
+    "SCAN_FOLDERS predates folders.py as the registry and was never derived from it",
+    "classifier prompt text and cli recommend payload duplicate the taxonomy by hand",
+    "readme_contract_test.py pins the gap as documented behavior"
+  ],
+  "evidence": [
+    "SCAN_FOLDERS contains legacy folders that is_valid_folder rejects",
+    "the same taxonomy data appears in pipeline.py, classifier.py, cli.py, and docs/folder-descriptions.yaml",
+    "README and readme_contract_test.py:20-24 document the fixed-scan-scope limitation"
+  ],
+  "solutions": [
+    "make folders.py the single owner: derive scan scope from the registry (list_folders() filtered by is_valid_folder plus an explicit retained legacy list as data next to the registry)",
+    "generate the classifier FOLDER_TAXONOMY prompt and the cli classify --recommend taxonomy payload from the same registry",
+    "update README and readme_contract_test.py:20-24 in the same change to describe derived scan scope"
+  ],
+  "acceptance_criteria": [
+    "adding a folder to the folders.py registry propagates to scan scope, classifier prompt, and cli recommend payload without other edits",
+    "legacy folders are retained explicitly as data next to the registry",
+    "uv run pytest tests/unit passes including readme_contract_test.py",
+    "README no longer documents the fixed-scan-scope limitation"
+  ],
+  "scope": [
+    "src/kontor_cli/folders.py",
+    "src/kontor_cli/pipeline.py",
+    "src/kontor_cli/classifier.py",
+    "src/kontor_cli/cli.py",
+    "docs/folder-descriptions.yaml",
+    "README.md",
+    "tests/unit/readme_contract_test.py",
+    "tests/unit/pipeline_test.py",
+    "tests/unit/classifier_test.py",
+    "tests/unit/cli_test.py",
+    ".ai/handoff/autobahn-goals/kontor-cli-single-folder-taxonomy.json",
+    ".ai/evidence/kontor-cli-single-folder-taxonomy.json"
+  ],
+  "verification": ["uv run pytest tests/unit"],
+  "coverage_percent": 90
+}

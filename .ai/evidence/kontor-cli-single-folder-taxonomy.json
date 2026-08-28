@@ -1,0 +1,11 @@
+{
+  "goal_id": "kontor-cli-single-folder-taxonomy",
+  "green": {
+    "command": "uv run pytest tests/unit",
+    "exit_code": 0
+  },
+  "red": {
+    "command": "uv run pytest tests/unit",
+    "exit_code": 1
+  }
+}

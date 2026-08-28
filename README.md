@@ -77,8 +77,8 @@ After reviewing dry-run output, run the narrowest mutating phase that fits:
 
 ```bash
 uv run kontor-cli process --phase realtime  # Move classified inbox messages
-uv run kontor-cli process --phase rebuild   # Re-evaluate messages in fixed scan folders
-uv run kontor-cli process --phase heal      # Repair violations in fixed scan folders
+uv run kontor-cli process --phase rebuild   # Re-evaluate messages in the registry scan scope
+uv run kontor-cli process --phase heal      # Repair violations in the registry scan scope
 ```
 
 Useful read-only or guarded commands:
@@ -92,9 +92,11 @@ uv run kontor-cli dry-run --phase heal      # Preview invariant repairs
 uv run kontor-cli process --phase heal --rules-freeze
 ```
 
-`rebuild` and `heal` scan only the fixed `SCAN_FOLDERS` list in the pipeline;
-they do not discover arbitrary valid taxonomy folders. In particular, a valid
-`MGT_`, `PRJ_`, or `EXT_` folder that is absent from that list is not scanned.
+`rebuild` and `heal` derive their scan scope from the folder taxonomy registry
+in `src/kontor_cli/folders.py`: INBOX plus every concrete taxonomy folder the
+registry enumerates plus the legacy folders retained in the registry. Adding a
+folder to the registry adds it to the scan scope, the classifier prompt, and
+`classify --recommend` in one edit.
 
 `--rules-freeze` writes a timestamped snapshot of evolved-rule metadata before
 the heal run. Use it when a reviewed heal run should retain that audit point.

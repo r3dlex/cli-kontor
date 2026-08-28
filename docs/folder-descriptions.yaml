@@ -1,6 +1,8 @@
 # kontor-cli Folder Descriptions
-# This file documents every live folder's purpose, what emails go there,
-# and routing hints for the classification engine.
+# The authoritative folder taxonomy (valid names, scan scope, classifier
+# prompt, and the classify --recommend payload) is the registry in
+# src/kontor_cli/folders.py. This file documents every live folder's purpose,
+# what emails go there, and routing hints for the classification engine.
 # Keep this in sync with rules/rules.d/*.yaml.
 
 # ============================================================

@@ -13,6 +13,7 @@ from kontor_cli.config import Config
 from kontor_cli.folders import (
     FolderPolicy,
     is_valid_folder,
+    scan_folders,
 )
 from kontor_cli.himalaya import (
     Email,
@@ -25,58 +26,10 @@ from kontor_cli.rules import nl_rules, python_rules, yaml_dsl
 
 logger = logging.getLogger("kontor_cli.pipeline")
 
-# Scan scope for the Rebuild and Heal phases: every live taxonomy folder
-# plus legacy folders that still hold unprocessed emails.
-SCAN_FOLDERS = (
-    "INBOX",
-    "0_Action",
-    "1_Management",
-    "1_Management/1on1",
-    "1_Management/HR",
-    "1_Management/Leadership",
-    "2_Projects",
-    "2_Projects/Internal",
-    "2_Projects/Willemen",
-    "2_Projects/Eiffage",
-    "2_Projects/Vinci",
-    "2_Projects/Budimex",
-    "2_Projects/Releases",
-    "2_Projects/RIB-4.0/AI",
-    "2_Projects/Augment",
-    "2_Projects/AzureSigning",
-    "2_Projects/Development",
-    "2_Projects/China",
-    "2_Projects/Trivium",
-    "2_Projects/Sales_BoQ_Estimate_Procurement",
-    "2_Projects/Security",
-    "2_Projects/Finance",
-    "2_Projects/Infrastructure",
-    "3_External",
-    "3_External/Trivium",
-    "3_External/Miro",
-    "3_External/GitHub",
-    "3_External/Mitarbeiterangebote",
-    "3_External/Reportlinker",
-    "3_External/CoachHub",
-    "3_External/Viseo",
-    "3_External/HeroDevs",
-    "3_External/Microsoft",
-    "4_Info",
-    "9_System",
-    # Legacy folders (still have unprocessed emails)
-    "Projects",
-    "Executive",
-    "Admin",
-    "Finance",
-    "HR",
-    "Releases",
-    "Security",
-    "Travel",
-    "Newsletters",
-    "Logs",
-    "Review",
-    "Communication",
-)
+# Scan scope for the Rebuild and Heal phases, derived from the folder
+# taxonomy registry in folders.py: INBOX plus every concrete taxonomy folder
+# plus the retained legacy folders that still hold unprocessed emails.
+SCAN_FOLDERS = scan_folders()
 
 
 class Pipeline:

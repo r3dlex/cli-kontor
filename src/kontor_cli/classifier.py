@@ -9,6 +9,8 @@ from typing import TYPE_CHECKING, Any
 
 import httpx
 
+from kontor_cli.folders import taxonomy_prompt
+
 if TYPE_CHECKING:
     from kontor_cli.config import Config
     from kontor_cli.himalaya import Email
@@ -26,24 +28,9 @@ class ClassificationResult:
     action: str  # "adjust" | "create" | "none"
 
 
-FOLDER_TAXONOMY = """
-## Email Folder Taxonomy
-
-Emails MUST be placed in exactly one of these folders:
-
-- **0_Action** — Requires immediate action from you. Not a storage folder.
-- **1_Management/MGT_<Topic>** — Management topics: reporting, HR, legal, compliance, meetings, 1:1s.
-- **2_Projects/PRJ_<Domain>_<Initiative>_<Scope>** — Project work: specs, status updates, reviews, kickoffs.
-- **3_External/EXT_<Company>_<Topic>** — External parties: vendors, partners, clients.
-- **4_Info** — Informational only. Newsletters, announcements, system notifications.
-- **9_System** — System emails: password resets, security alerts, CI/CD pipelines, infra.
-- **Archive/<same path>** — Emails older than 6 months, or already-processed emails from any folder.
-
-Folder naming rules:
-- Sub-folders use "/" (e.g., "2_Projects/PRJ_Finance_ERP_Global")
-- Archive mirrors the exact structure (e.g., "Archive/2_Projects/PRJ_Finance_ERP_Global")
-- Never create folders outside this taxonomy.
-"""
+# The classifier prompt's taxonomy section, derived from the folder
+# taxonomy registry in folders.py (the single home of the taxonomy).
+FOLDER_TAXONOMY = taxonomy_prompt()
 
 
 SYSTEM_PROMPT = """You are an email classifier for kontor-cli. Your job is to classify emails into the correct folder based on the folder taxonomy.
