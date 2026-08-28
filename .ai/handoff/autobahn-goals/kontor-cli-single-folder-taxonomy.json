@@ -38,6 +38,6 @@
     ".ai/handoff/autobahn-goals/kontor-cli-single-folder-taxonomy.json",
     ".ai/evidence/kontor-cli-single-folder-taxonomy.json"
   ],
-  "verification": ["uv run pytest tests/unit"],
+  "verification": ["pytest tests/unit"],
   "coverage_percent": 90
 }
